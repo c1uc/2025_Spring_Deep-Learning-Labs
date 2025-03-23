@@ -176,3 +176,6 @@ cython_debug/
 *.png
 
 handins/
+dataset/
+wandb/
+*.pth

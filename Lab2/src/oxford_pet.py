@@ -7,6 +7,10 @@ from PIL import Image
 from tqdm import tqdm
 from urllib.request import urlretrieve
 
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+
+
 class OxfordPetDataset(torch.utils.data.Dataset):
     def __init__(self, root, mode="train", transform=None):
 
@@ -35,9 +39,10 @@ class OxfordPetDataset(torch.utils.data.Dataset):
         trimap = np.array(Image.open(mask_path))
         mask = self._preprocess_mask(trimap)
 
-        sample = dict(image=image, mask=mask, trimap=trimap)
+        sample = dict(image=image, mask=mask)
         if self.transform is not None:
             sample = self.transform(**sample)
+            sample["mask"] = sample["mask"].unsqueeze(0)
 
         return sample
 
@@ -86,9 +91,15 @@ class SimpleOxfordPetDataset(OxfordPetDataset):
         sample = super().__getitem__(*args, **kwargs)
 
         # resize images
-        image = np.array(Image.fromarray(sample["image"]).resize((256, 256), Image.BILINEAR))
-        mask = np.array(Image.fromarray(sample["mask"]).resize((256, 256), Image.NEAREST))
-        trimap = np.array(Image.fromarray(sample["trimap"]).resize((256, 256), Image.NEAREST))
+        image = np.array(
+            Image.fromarray(sample["image"]).resize((256, 256), Image.BILINEAR)
+        )
+        mask = np.array(
+            Image.fromarray(sample["mask"]).resize((256, 256), Image.NEAREST)
+        )
+        trimap = np.array(
+            Image.fromarray(sample["trimap"]).resize((256, 256), Image.NEAREST)
+        )
 
         # convert to other format HWC -> CHW
         sample["image"] = np.moveaxis(image, -1, 0)
@@ -128,7 +139,38 @@ def extract_archive(filepath):
     if not os.path.exists(dst_dir):
         shutil.unpack_archive(filepath, extract_dir)
 
+
 def load_dataset(data_path, mode):
     # implement the load dataset function here
+    assert mode in {"train", "valid", "test"}
 
-    assert False, "Not implemented yet!"
+    if mode == "train":
+        transform = A.Compose([
+            A.Resize(256, 256),
+            A.OneOf([
+                A.RandomResizedCrop((256, 256), scale=(0.8, 1.0), ratio=(0.75, 1.33), p=1.0),
+                A.Rotate(limit=30, p=1.0),
+            ], p=0.5),
+            A.OneOf([
+                A.HorizontalFlip(p=1.0),
+                A.VerticalFlip(p=1.0),
+            ], p=0.5),
+            A.OneOf([
+                A.RandomBrightnessContrast(p=1.0),
+                A.RandomGamma(p=1.0),
+            ], p=0.3),
+            A.OneOf([
+                A.GaussNoise(p=1.0),
+                A.GaussianBlur(p=1.0),
+            ], p=0.2),
+            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ToTensorV2(),
+        ])
+    else:
+        transform = A.Compose([
+            A.Resize(256, 256),
+            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ToTensorV2(),
+        ])
+
+    return OxfordPetDataset(data_path, mode, transform)

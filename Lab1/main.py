@@ -144,7 +144,9 @@ class Adam:
 
 
 class Model:
-    def __init__(self, optimizer="SGD", lr=1e-2, hidden_1=128, hidden_2=64, activation="Sigmoid"):
+    def __init__(
+        self, optimizer="SGD", lr=1e-2, hidden_1=128, hidden_2=64, activation="Sigmoid"
+    ):
         if activation == "Sigmoid":
             activation = Sigmoid()
         elif activation == "Tanh":
@@ -245,7 +247,9 @@ def generate_XOR_easy():
     return np.array(inputs), np.array(labels).reshape(21, 1)
 
 
-def show_result(x, y, pred_y, records, data, optimizer, lr, hidden_1, hidden_2, activation):
+def show_result(
+    x, y, pred_y, records, data, optimizer, lr, hidden_1, hidden_2, activation
+):
     import matplotlib.pyplot as plt
 
     y_hat = np.where(pred_y > 0.5, 1, 0)
@@ -266,7 +270,9 @@ def show_result(x, y, pred_y, records, data, optimizer, lr, hidden_1, hidden_2, 
         else:
             plt.plot(x[i][0], x[i][1], "bo")
 
-    plt.savefig(f"result_{data}_{optimizer}_{lr}_{hidden_1}_{hidden_2}_{activation}.png")
+    plt.savefig(
+        f"result_{data}_{optimizer}_{lr}_{hidden_1}_{hidden_2}_{activation}.png"
+    )
     plt.close()
 
     plt.figure(figsize=(10, 5))
@@ -289,52 +295,102 @@ def show_result(x, y, pred_y, records, data, optimizer, lr, hidden_1, hidden_2, 
 
     plt.figure(figsize=(12, 6))
     acc = np.sum(y_hat == y) / len(y)
-    plt.title(f"Accuracy: {acc:.2f}, loss: {MSELoss().forward(pred_y, y):.2f}", fontsize=18)
-    
-    plt.axhline(y=0.5, color='green', linestyle='--', alpha=0.5, label='Decision Boundary (y=0.5)')
-    
-    plt.scatter(range(len(y)), y, label="Ground Truth", color='black', marker="o", alpha=0.6, s=100)
-    
+    plt.title(
+        f"Accuracy: {acc:.2f}, loss: {MSELoss().forward(pred_y, y):.2f}", fontsize=18
+    )
+
+    plt.axhline(
+        y=0.5,
+        color="green",
+        linestyle="--",
+        alpha=0.5,
+        label="Decision Boundary (y=0.5)",
+    )
+
+    plt.scatter(
+        range(len(y)),
+        y,
+        label="Ground Truth",
+        color="black",
+        marker="o",
+        alpha=0.6,
+        s=100,
+    )
+
     true_0_indices = (y == 0).flatten()
     true_1_indices = (y == 1).flatten()
-    
-    plt.scatter(np.where(true_0_indices)[0], pred_y[true_0_indices], 
-                label="Pred (True=0)", color="red", marker="x", alpha=0.8, s=100)
-    plt.scatter(np.where(true_1_indices)[0], pred_y[true_1_indices], 
-                label="Pred (True=1)", color="blue", marker="x", alpha=0.8, s=100)
-    
+
+    plt.scatter(
+        np.where(true_0_indices)[0],
+        pred_y[true_0_indices],
+        label="Pred (True=0)",
+        color="red",
+        marker="x",
+        alpha=0.8,
+        s=100,
+    )
+    plt.scatter(
+        np.where(true_1_indices)[0],
+        pred_y[true_1_indices],
+        label="Pred (True=1)",
+        color="blue",
+        marker="x",
+        alpha=0.8,
+        s=100,
+    )
+
     for i, pred in enumerate(pred_y):
         color = "blue" if y[i] == 1 else "red"
-        plt.annotate(f'{pred[0]:.2f}', 
-                    (i, pred[0]),
-                    xytext=(1, 1),
-                    textcoords='offset points',
-                    fontsize=8,
-                    alpha=0.7,
-                    rotation=45,
-                    ha='left',
-                    va='bottom',
-                    color=color)
-    
+        plt.annotate(
+            f"{pred[0]:.2f}",
+            (i, pred[0]),
+            xytext=(1, 1),
+            textcoords="offset points",
+            fontsize=8,
+            alpha=0.7,
+            rotation=45,
+            ha="left",
+            va="bottom",
+            color=color,
+        )
+
     plt.xlabel("Index")
     plt.ylabel("Value")
     plt.grid(True, alpha=0.3)
     plt.legend()
     plt.subplots_adjust(bottom=0.2)
-    plt.savefig(f"values_{data}_{optimizer}_{lr}_{hidden_1}_{hidden_2}_{activation}.png")
+    plt.savefig(
+        f"values_{data}_{optimizer}_{lr}_{hidden_1}_{hidden_2}_{activation}.png"
+    )
     plt.close()
 
 
-def main(data="linear", optimizer="Adam", lr=1e-2, epochs=-1, hidden_1=32, hidden_2=16, activation="Sigmoid"):
+def main(
+    data="linear",
+    optimizer="Adam",
+    lr=1e-2,
+    epochs=-1,
+    hidden_1=32,
+    hidden_2=16,
+    activation="Sigmoid",
+):
     if data == "linear":
         x, y = generate_linear(100)
     elif data == "XOR":
         x, y = generate_XOR_easy()
 
-    model = Model(optimizer=optimizer, lr=lr, hidden_1=hidden_1, hidden_2=hidden_2, activation=activation)
+    model = Model(
+        optimizer=optimizer,
+        lr=lr,
+        hidden_1=hidden_1,
+        hidden_2=hidden_2,
+        activation=activation,
+    )
     records = model.train(x, y, epochs=epochs)
     pred_y = model.nn(x)
-    show_result(x, y, pred_y, records, data, optimizer, lr, hidden_1, hidden_2, activation)
+    show_result(
+        x, y, pred_y, records, data, optimizer, lr, hidden_1, hidden_2, activation
+    )
 
 
 if __name__ == "__main__":
