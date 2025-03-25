@@ -178,4 +178,10 @@ cython_debug/
 handins/
 dataset/
 wandb/
+imga/
+test_results/
+mask_scheduling/
+
 *.pth
+*.pt
+*.tex

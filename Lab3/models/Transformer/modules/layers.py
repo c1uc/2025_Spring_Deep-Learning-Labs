@@ -2,20 +2,50 @@ import torch.nn as nn
 import torch
 import math
 
-#TODO1
+
+# TODO1
 class MultiHeadAttention(nn.Module):
     def __init__(self, dim=768, num_heads=16, attn_drop=0.1):
         super(MultiHeadAttention, self).__init__()
 
+        self.num_heads = num_heads
+        self.dim_head = dim // num_heads
+
+        self.W_Q = nn.Linear(dim, dim)
+        self.W_K = nn.Linear(dim, dim)
+        self.W_V = nn.Linear(dim, dim)
+
+        self.attn_drop = nn.Dropout(attn_drop)
+        self.proj = nn.Linear(dim, dim)
+
     def forward(self, x):
-        ''' Hint: input x tensor shape is (batch_size, num_image_tokens, dim), 
-            because the bidirectional transformer first will embed each token to dim dimension, 
-            and then pass to n_layers of encoders consist of Multi-Head Attention and MLP. 
-            # of head set 16
-            Total d_k , d_v set to 768
-            d_k , d_v for one head will be 768//16.
-        '''
-        raise Exception('TODO1!')
+        """Hint: input x tensor shape is (batch_size, num_image_tokens, dim),
+        because the bidirectional transformer first will embed each token to dim dimension,
+        and then pass to n_layers of encoders consist of Multi-Head Attention and MLP.
+        # of head set 16
+        Total d_k , d_v set to 768
+        d_k , d_v for one head will be 768 // 16.
+        """
+
+        b, n, _ = x.shape
+        q = self.W_Q(x)
+        k = self.W_K(x)
+        v = self.W_V(x)
+
+        q = q.view(b, n, self.num_heads, self.dim_head).transpose(1, 2)
+        k = k.view(b, n, self.num_heads, self.dim_head).transpose(1, 2)
+        v = v.view(b, n, self.num_heads, self.dim_head).transpose(1, 2)
+
+        scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.dim_head)
+        scores = torch.softmax(scores, dim=-1)
+        scores = self.attn_drop(scores)
+
+        out = torch.matmul(scores, v)
+        out = out.transpose(1, 2).contiguous().view(b, n, -1)
+        out = self.proj(out)
+
+        return out
+
 
 class MLP(nn.Sequential):
     def __init__(self, dim=768, hidden_dim=3072, drop_rate=0.1):
@@ -23,25 +53,25 @@ class MLP(nn.Sequential):
             nn.Linear(dim, hidden_dim),
             nn.GELU(),
             nn.Linear(hidden_dim, dim),
-            nn.Dropout(p=0.1)
+            nn.Dropout(p=drop_rate),
         )
-        
+
     def forward(self, input):
         return super().forward(input)
-    
-    
+
+
 class TokenPredictor(nn.Sequential):
     def __init__(self, dim=768):
         super(TokenPredictor, self).__init__(
             nn.Linear(in_features=dim, out_features=dim),
             nn.GELU(),
-            nn.LayerNorm(dim, eps=1e-12)
+            nn.LayerNorm(dim, eps=1e-12),
         )
-        
+
     def forward(self, input):
         return super().forward(input)
-    
-    
+
+
 class Encoder(nn.Module):
     def __init__(self, dim=768, hidden_dim=1536):
         super(Encoder, self).__init__()
@@ -54,11 +84,10 @@ class Encoder(nn.Module):
     def forward(self, x):
         attn = self.Attention(x)
         attn = self.dropout(attn)
-        
+
         x = x + attn
         x = self.LayerNorm1(x)
-        
+
         mlp = self.MLP(x)
         x = x + mlp
         return self.LayerNorm2(x)
-    
