@@ -129,7 +129,7 @@ class MaskedImage:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="MaskGIT for Inpainting")
     parser.add_argument(
-        "--device", type=str, default="cuda:1", help="Which device the training is on."
+        "--device", '-d', type=str, default="cuda:1", help="Which device the training is on."
     )  # cuda
     parser.add_argument(
         "--batch-size", type=int, default=1, help="Batch size for testing."
@@ -151,7 +151,7 @@ if __name__ == "__main__":
 
     # TODO3 step1-2: modify the path, MVTM parameters
     parser.add_argument(
-        "--load-transformer-ckpt-path", type=str, default="./transformer_checkpoints/epoch_500.pt", help="load ckpt"
+        "--load-transformer-ckpt-path", type=str, default="./transformer_checkpoints/best_model.pt", help="load ckpt"
     )
 
     # dataset path
@@ -171,11 +171,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--sweet-spot",
         type=int,
-        default=-1,
+        default=1,
         help="sweet spot: the best step in total iteration",
     )
     parser.add_argument(
-        "--total-iter", type=int, default=100, help="total step for mask scheduling"
+        "--total-iter", type=int, default=20, help="total step for mask scheduling"
     )
     parser.add_argument(
         "--mask-func", type=str, default="cosine", help="mask scheduling function"

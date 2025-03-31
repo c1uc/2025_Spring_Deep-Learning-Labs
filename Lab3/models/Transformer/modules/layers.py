@@ -27,19 +27,23 @@ class MultiHeadAttention(nn.Module):
         d_k , d_v for one head will be 768 // 16.
         """
 
+        # prepare q, k, v
         b, n, _ = x.shape
         q = self.W_Q(x)
         k = self.W_K(x)
         v = self.W_V(x)
 
+        # split q, k, v into num_heads
         q = q.view(b, n, self.num_heads, self.dim_head).transpose(1, 2)
         k = k.view(b, n, self.num_heads, self.dim_head).transpose(1, 2)
         v = v.view(b, n, self.num_heads, self.dim_head).transpose(1, 2)
 
+        # calculate attn scores
         scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.dim_head)
         scores = torch.softmax(scores, dim=-1)
         scores = self.attn_drop(scores)
 
+        # calculate output
         out = torch.matmul(scores, v)
         out = out.transpose(1, 2).contiguous().view(b, n, -1)
         out = self.proj(out)

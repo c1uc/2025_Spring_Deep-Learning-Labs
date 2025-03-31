@@ -38,7 +38,8 @@ class MaskGit(nn.Module):
         return z_q, z_idx.reshape(z_q.shape[0], -1)
 
     ##TODO2 step1-2:
-    def gamma_func(self, mode="cosine"):
+    @staticmethod
+    def gamma_func(mode="cosine"):
         """Generates a mask rate by scheduling mask functions R.
 
         Given a ratio in [0, 1), we generate a masking ratio from (0, 1].

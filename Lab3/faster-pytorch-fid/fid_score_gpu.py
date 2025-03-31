@@ -440,7 +440,7 @@ parser.add_argument(
 parser.add_argument(
     "--predicted-path",
     type=str,
-    default="/home/wendy/Maskgit_CIFAR10cat/models/VQGAN/test_i",
+    default="../test_results",
 )
 
 parser.add_argument("--gtcsv-path", type=str, default="./test_gt.csv")

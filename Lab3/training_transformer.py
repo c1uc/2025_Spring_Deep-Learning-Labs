@@ -73,8 +73,21 @@ class TrainTransformer:
         optimizer = torch.optim.Adam(
             self.model.parameters(), lr=self.args.learning_rate
         )
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=self.args.epochs
+        warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+            optimizer, 
+            start_factor=0.001,
+            end_factor=1.0,
+            total_iters=self.args.epochs * 0.1
+        )
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer,
+            schedulers=[
+                warmup_scheduler,
+                torch.optim.lr_scheduler.CosineAnnealingLR(
+                    optimizer, T_max=self.args.epochs - self.args.epochs * 0.1
+                )
+            ],
+            milestones=[self.args.epochs * 0.1]
         )
         return optimizer, scheduler
 
@@ -105,7 +118,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--num_workers", type=int, default=32, help="Number of worker")
     parser.add_argument(
-        "--batch-size", type=int, default=64, help="Batch size for training."
+        "--batch-size", type=int, default=32, help="Batch size for training."
     )
     parser.add_argument(
         "--partial",
@@ -119,7 +132,7 @@ if __name__ == "__main__":
 
     # you can modify the hyperparameters
     parser.add_argument(
-        "--epochs", type=int, default=500, help="Number of epochs to train."
+        "--epochs", type=int, default=150, help="Number of epochs to train."
     )
     parser.add_argument(
         "--save-per-epoch",
@@ -170,6 +183,7 @@ if __name__ == "__main__":
     )
 
     wandb.init(project="NYCU_DL_Lab3", name=f"MaskGit_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}", config=vars(args))
+    best_val_loss = float('inf')
 
     # TODO2 step1-5:
     for epoch in range(args.start_from_epoch + 1, args.epochs + 1):
@@ -182,3 +196,8 @@ if __name__ == "__main__":
         if epoch % args.save_per_epoch == 0:
             torch.save(train_transformer.model.state_dict(), f"transformer_checkpoints/epoch_{epoch}.pt")
             wandb.save(f"transformer_checkpoints/epoch_{epoch}.pt")
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            torch.save(train_transformer.model.state_dict(), f"transformer_checkpoints/best_model_{val_loss:.4f}.pt")
+            wandb.save(f"transformer_checkpoints/best_model_{val_loss:.4f}.pt")
