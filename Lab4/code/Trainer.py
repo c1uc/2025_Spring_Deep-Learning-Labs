@@ -128,7 +128,7 @@ class VAE_Model(nn.Module):
         pass
 
     def training_stage(self):
-        for i in range(1, self.args.num_epoch):
+        for i in range(1, self.args.num_epoch + 1):
             train_loader = self.train_dataloader()
             adapt_TeacherForcing = True if random.random() < self.tfr else False
             total_loss = 0
@@ -142,7 +142,7 @@ class VAE_Model(nn.Module):
                 beta = self.kl_annealing.get_beta()
                 if adapt_TeacherForcing:
                     self.tqdm_bar(
-                        "train [TeacherForcing: ON, {:.1f}], beta: {}".format(
+                        "train [TeacherForcing: ON, {:.1f}], beta: {:.3f}".format(
                             self.tfr, beta
                         ),
                         pbar,
@@ -151,7 +151,7 @@ class VAE_Model(nn.Module):
                     )
                 else:
                     self.tqdm_bar(
-                        "train [TeacherForcing: OFF, {:.1f}], beta: {}".format(
+                        "train [TeacherForcing: OFF, {:.1f}], beta: {:.3f}".format(
                             self.tfr, beta
                         ),
                         pbar,
@@ -159,10 +159,10 @@ class VAE_Model(nn.Module):
                         lr=self.scheduler.get_last_lr()[0],
                     )
 
-            if (i + 1) % self.args.per_save == 0:
+            if i % self.args.per_save == 0:
                 self.save(
                     os.path.join(
-                        self.args.save_root, f"epoch_{i + 1}.ckpt"
+                        self.args.save_root, f"epoch_{i}.ckpt"
                     )
                 )
 
