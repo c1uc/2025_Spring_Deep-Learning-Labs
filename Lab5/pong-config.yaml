@@ -1,0 +1,20 @@
+batch_size: 128
+discount_factor: 0.99
+epsilon_decay: 0.99999
+epsilon_min: 0.05
+epsilon_start: 1.0
+lr: 0.0001
+max_episode_steps: 10000
+memory_size: 100000
+replay_start_size: 50000
+save_dir: ./pong-results-task2-5
+target_update_frequency: 1000
+train_per_step: 1
+wandb_run_name: pong
+env_name: ALE/Pong-v5  # CartPole-v1 or ALE/Pong-v5
+gpu: 1
+per: false
+ddqn: false
+n_step_return: 1
+episodes: 10000
+exit_on_loss: false
