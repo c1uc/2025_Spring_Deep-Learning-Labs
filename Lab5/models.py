@@ -105,7 +105,7 @@ class PrioritizedReplayBuffer:
         if np.any(probs):
             probs = np.where(probs == np.inf, 10, 1).astype(np.float32)
         else:
-            probs = probs ** self.alpha
+            probs = probs ** self.alpha + self.epsilon
 
         probs /= probs.sum()
 
