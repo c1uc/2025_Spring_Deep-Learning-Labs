@@ -16,7 +16,7 @@ class DDPM:
     def __init__(self, config):
         self.config = config
         self.device = config.get(
-            "device", "cuda:3" if torch.cuda.is_available() else "cpu"
+            "device", "cuda:0" if torch.cuda.is_available() else "cpu"
         )
 
         self.model = UNet2DModel(
@@ -43,7 +43,7 @@ class DDPM:
             ),
         ).to(self.device)
 
-        self.noise_scheduler = DDPMScheduler(num_train_timesteps=1000)
+        self.noise_scheduler = DDPMScheduler(num_train_timesteps=self.config["num_train_timesteps"])
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(), lr=config["learning_rate"]
         )
@@ -70,8 +70,8 @@ class DDPM:
                 noise = torch.randn(images.shape).to(self.device)
                 timesteps = torch.randint(
                     0,
-                    self.noise_scheduler.num_train_timesteps,
-                    (self.config["batch_size"],),
+                    self.config["num_train_timesteps"],
+                    (images.shape[0],),
                     device=self.device,
                 ).long()
                 noisy_images = self.noise_scheduler.add_noise(images, noise, timesteps)
@@ -158,12 +158,13 @@ if __name__ == "__main__":
     config = {
         "learning_rate": 1e-4,
         "num_epochs": 100,
-        "batch_size": 64,
+        "num_train_timesteps": 1000,
+        "batch_size": 8,
         "image_size": 64,
         "num_inference_steps": 50,
         "train_split": 0.8,
         "img_dir": "dataset/iclevr/",
-        "labels": "annotation/train.json",
+        "labels": "dataset/train.json",
         "objects": "annotation/objects.json",
     }
 

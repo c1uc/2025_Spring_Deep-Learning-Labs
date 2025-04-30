@@ -6,25 +6,20 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "diffusers>=0.33.1",
-    "torch>=2.7.0",
-    "torchvision>=0.22.0",
-    "wandb>=0.19.10",
-]
-
-[dependency-groups]
-dev = [
-    "black>=25.1.0",
+    "torch>=2.6.0",
+    "torchvision>=0.21.0",
+    "tqdm>=4.67.1",
 ]
 
 [[tool.uv.index]]
-name = "pytorch-cu118"
-url = "https://download.pytorch.org/whl/cu118"
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
 explicit = true
 
 [tool.uv.sources]
 torch = [
-  { index = "pytorch-cu118", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+  { index = "pytorch-cu124", marker = "sys_platform == 'linux'" },
 ]
 torchvision = [
-  { index = "pytorch-cu118", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+  { index = "pytorch-cu124", marker = "sys_platform == 'linux'" },
 ]
