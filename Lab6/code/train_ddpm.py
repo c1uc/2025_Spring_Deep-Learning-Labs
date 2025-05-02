@@ -56,8 +56,9 @@ class DDPM:
             train_split=config["train_split"],
         )
 
+        self.evaluator = evaluation_model(self.device)
+
     def train(self):
-        evaluator = evaluation_model()
         for epoch in range(self.config["num_epochs"]):
             self.model.train()
             progress_bar = tqdm(total=len(self.train_loader))
@@ -87,6 +88,8 @@ class DDPM:
                 progress_bar.update(1)
                 progress_bar.set_postfix(loss=loss.item())
 
+                break
+
             progress_bar.close()
 
             if (epoch + 1) % 10 == 0:
@@ -97,10 +100,14 @@ class DDPM:
     def save_checkpoint(self, epoch):
         pipeline = DDPMPipeline(unet=self.model, scheduler=self.noise_scheduler)
         pipeline.save_pretrained(f"ddpm_model_epoch_{epoch+1}")
+        
+    def load_checkpoint(self, epoch):
+        pipeline = DDPMPipeline.from_pretrained(f"ddpm_model_epoch_{epoch+1}")
+        self.model = pipeline.unet
+        self.noise_scheduler = pipeline.scheduler
 
     def evaluate(self):
         self.model.eval()
-        evaluator = evaluation_model()
         acc = []
         with torch.no_grad():
             for val_batch in self.val_loader:
@@ -115,19 +122,23 @@ class DDPM:
                     output_type="tensor",
                 ).images
 
-                acc.append(evaluator.compute_acc(generated_images, val_labels))
+                img = torch.tensor(generated_images).permute(0, 3, 1, 2).to(self.device)
+
+                acc.append(self.evaluator.eval(img, val_labels))
         self.model.train()
         return np.mean(acc)
 
     def test(self):
         self.model.eval()
-        evaluator = evaluation_model()
 
         with open(self.config["test_file"], "r") as f:
             test_data = json.load(f)
 
         with open(self.config["objects"], "r") as f:
             objects_map = json.load(f)
+            
+        test_dir = f"generated_images_{self.config['test_file'].split('/')[-1].split('.')[0]}"
+        os.makedirs(test_dir, exist_ok=True)
 
         for i, test_case in enumerate(test_data):
             label = torch.zeros(24)
@@ -142,7 +153,7 @@ class DDPM:
             ).images[0]
 
             image = (image * 255).round().astype("uint8")
-            Image.fromarray(image).save(f"generated_images/test_{i}.png")
+            Image.fromarray(image).save(f"{test_dir}/test_{i}.png")
 
             image_tensor = (
                 torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0).float() / 255.0
@@ -150,12 +161,13 @@ class DDPM:
             image_tensor = image_tensor.to(self.device)
             label = label.unsqueeze(0).to(self.device)
 
-            acc = evaluator.compute_acc(image_tensor, label)
+            acc = self.evaluator.eval(image_tensor, label)
             print(f"Test case {i} accuracy: {acc}")
 
 
 if __name__ == "__main__":
     config = {
+        "device": "cuda:3",
         "learning_rate": 1e-4,
         "num_epochs": 100,
         "num_train_timesteps": 1000,
@@ -163,11 +175,13 @@ if __name__ == "__main__":
         "image_size": 64,
         "num_inference_steps": 50,
         "train_split": 0.8,
-        "img_dir": "dataset/iclevr/",
-        "labels": "dataset/train.json",
+        "img_dir": "iclevr/",
+        "labels": "annotation/train.json",
         "objects": "annotation/objects.json",
+        "test_file": "annotation/test.json",
     }
 
     ddpm = DDPM(config)
     ddpm.train()
+    # ddpm.load_checkpoint(99)
     ddpm.test()
