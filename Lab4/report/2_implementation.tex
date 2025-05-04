@@ -1,0 +1,167 @@
+\subsection{Training Protocol}
+To train the conditional VAE and video prediction model, we need to iterate through the dataset and take the previous frame and current label as input, and then train the model to minimize the loss function.
+
+The detailed training protocol is as follows:
+\begin{enumerate}
+    \item Iterate through the dataset and take the previous frame and current label as input.
+    \item Encode the previous frame, current frame and current label.
+    \item Use the posterior predictor to predict the distribution of the latent code.
+    \item Sample the latent code from the distribution.
+    \item Use the decoder fusion to decode the latent code.
+    \item Use a generator to generate the current frame.
+    \item Update the model with MSE loss between the generated frame and the current frame.
+    \item Update the model with KL divergence loss between the predicted distribution and the normal distribution.
+\end{enumerate}
+
+the implementation of the training protocol is as follows:
+
+\begin{lstlisting}[language=Python]
+for t in range(1, timesteps):
+    if adapt_TeacherForcing: # step 1 - previous frame
+        prev = img[:, t - 1, ...]
+    else:
+        prev = x_hat
+
+    cur = img[:, t, ...] # step 1 - current frame
+    cur_label = label[:, t, ...] # step 1 - current label
+
+    encoded_cur_frame = self.frame_transformation(cur) # step 2 - encoded current frame
+    encoded_label = self.label_transformation(cur_label) # step 2 - encoded current label
+    encoded_prev_frame = self.frame_transformation(prev).detach() # step 2 - encoded previous frame
+
+    z, mu, logvar = self.Gaussian_Predictor(
+        encoded_cur_frame, encoded_label
+    ) # step 3, 4 - predict the distribution of the latent code and sample a latent code
+
+
+    decoded = self.Decoder_Fusion(
+        encoded_prev_frame, encoded_label, z
+    ) # step 5 - decode the latent code
+
+    x_hat = self.Generator(decoded) # step 6 - generate the current frame
+    x_hat = nn.functional.sigmoid(x_hat)
+
+    mse_loss = self.mse_criterion(x_hat, cur) # step 7 - calculate the MSE loss
+    kl_loss = kl_criterion(mu, logvar, batch_size) # step 8 - calculate the KL divergence loss
+
+    loss = mse_loss + beta * kl_loss
+    total_loss += loss
+\end{lstlisting}
+
+after then, we call the optimizer to update the model parameters.
+
+\subsection{Testing Protocol}
+Testing protocol is more straightforward. We just need to iterate through the dataset and take the previous frame and current label as input, and then generate the current frame.
+
+Detailed protocol is as follows:
+\begin{enumerate}
+    \item Iterate through the dataset and take the previous frame and current label as input.
+    \item Encode the previous frame and current label.
+    \item Sample a latent code from the normal distribution.
+    \item Decode the latent code.
+    \item Generate the current frame.
+\end{enumerate}
+
+The implementation of the testing protocol is as follows:
+
+\begin{lstlisting}[language=Python]
+for t in range(1, label.shape[0]):
+    prev = decoded_frame_list[-1].to(self.args.device) # step 1 - previous frame
+    lbl = label[t, ...].to(self.args.device) # step 1 - current label
+
+    encoded_img = self.frame_transformation(prev) # step 2 - encoded previous frame
+    encoded_label = self.label_transformation(lbl) # step 2 - encoded current label
+
+    z, mu, logvar = self.Gaussian_Predictor(encoded_img, encoded_label)
+    eps = torch.randn_like(z) # step 3 - sample a latent code
+
+    decoded_frame = self.Decoder_Fusion(encoded_img, encoded_label, eps) # step 4 - decode the latent code
+    
+    x_hat = self.Generator(decoded_frame) # step 5 - generate the current frame
+    x_hat = nn.functional.sigmoid(x_hat)
+
+    decoded_frame_list.append(x_hat.cpu())
+    label_list.append(lbl.cpu())
+\end{lstlisting}
+
+\subsection{Reparameterization Trick}
+To implement the reparameterization trick, we just sample a $\epsilon$ from the normal distribution and then use the formula:
+
+\begin{equation}
+    z = \mu + \sigma \cdot \epsilon
+\end{equation}
+
+to get the latent code.
+
+The implementation of the reparameterization trick is as follows:
+
+\begin{lstlisting}[language=Python]
+eps = torch.randn_like(z)
+z = mu + torch.exp(logvar / 2) * eps
+\end{lstlisting}
+
+
+\subsection{Teacher Forcing}
+If a training step is teacher forcing, we just use the groundtruth of previous frame as the input.
+As for the teacher forcing ratio, we just need to update the ratio in the training protocol when episode reaches the specified epoch $tfr\_sde$, and then decrease the ratio by $tfr\_d\_step$ every epoch.
+
+\begin{lstlisting}[language=Python]
+def teacher_forcing_ratio_update(self):
+    # TODO
+    if self.current_epoch >= self.args.tfr_sde:
+        self.tfr -= self.args.tfr_d_step
+        self.tfr = max(self.tfr, 0)
+\end{lstlisting}
+
+\subsection{KL annealing}
+KL annealing is a technique to gradually increase the KL divergence loss during training, it can help the model to strive a balance between the reconstruction loss and the KL divergence loss.
+In this lab, we implemented three types of KL annealing:
+\begin{enumerate}
+    \item Cyclical: The KL divergence loss is increased in a cyclic manner.
+    \item Monotonic: The KL divergence loss is increased monotonically.
+    \item Constant (equals to disabled): The KL divergence loss is constant.
+\end{enumerate}
+The following graph shows the difference between the three types of KL annealing.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{src/kl_annealing.png}
+    \caption{KL annealing}
+\end{figure}
+
+Since I found that using a zero start value would make the model unstable at the beginning, so I set the start value to $0.1$, and this prevents all the following experiments to have a $NaN$ loss.
+
+And their implementation is real simple. First, fill all the values with $stop$, and calculate the start of each increasing period by $n\_iter / n\_cycle$, then its end is $start + ratio * n\_iter / n\_cycle$. Fill the values between the start and end with $np.linspace(start, stop, int(period * ratio))$, and the rest is the same.
+
+\begin{lstlisting}[language=Python]
+betas = np.ones(n_iter) * stop
+period = n_iter // n_cycle
+
+for c in range(n_cycle):
+    start_ = period * c
+    end_ = start_ + int(period * ratio)
+    betas[start_:end_] = np.linspace(start, stop, int(period * ratio))
+
+return betas
+\end{lstlisting}
+
+and this is the implementation of the initialization of each type of KL annealing, since for monotic, we can view it as a special case of cyclical with $n\_cycle = 1$:
+
+\begin{lstlisting}[language=Python]
+self.betas = self.frange_cycle_linear(
+    args.num_epoch,
+    n_cycle=args.kl_anneal_cycle,
+    ratio=args.kl_anneal_ratio,
+) # Cyclical
+
+self.betas = self.frange_cycle_linear(
+    args.num_epoch,
+    n_cycle=1,
+    ratio=args.kl_anneal_ratio,
+) # Monotonic
+
+self.betas = np.ones(args.num_epoch) # Constant
+\end{lstlisting}
+
+
+

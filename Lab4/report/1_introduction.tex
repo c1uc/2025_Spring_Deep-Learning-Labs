@@ -1,0 +1,11 @@
+In this lab, we will implement a conditional VAE for video prediction.
+
+\subsection{Conditional VAE}
+The conditional VAE is a type of VAE that takes a data $x$ as input and a conditional data $y$ as input, we want to model the conditional distribution $p(z|x, y)$.
+In this case, we model the conditional VAE to predict the distribution of the current frame $z$ from the previous frame $x$ and current label $y$.
+
+To train a conditional VAE, we define a posterior predictor $q(z|x, y)$ that models the approximate posterior distribution of the latent variable $z$ given the observation $x$ and condition $y$, and a prior predictor $p(z|y)$ that models the prior distribution of $z$ conditioned only on $y$.
+
+In brief, posterior predictor uses current frame and label to predict the distribution of the latent code, and the distribution of the latent code is modeled to be like a normal distribution, and a decoder fusion to decode the latent code into the current frame.
+
+

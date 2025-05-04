@@ -1,0 +1,495 @@
+\subsection{Training}
+The training procedure is just a ordinary training procedure in PyTorch.
+For the implementation of the training process, I follow the steps below:
+\begin{enumerate}
+    \item Load the model and dataset
+    \item Define the optimizer, learning rate scheduler, and loss function
+    \item Train the model
+    \item Evaluate the model after each epoch
+\end{enumerate}
+
+For the detailed implementation of each step:
+
+
+\subsubsection{Initialize}
+Load the model and train, valid dataset, and define the optimizer, learning rate scheduler, and loss function.
+\begin{lstlisting}[language=Python, caption=train.py: Initialize, label=lst:train_initialize]
+# Load the model
+if args.model == "unet":
+    model = UNet()
+elif args.model == "resnet34_unet":
+    model = ResNet34Unet()
+else:
+    raise ValueError(f"Model {args.model} not found")
+
+model.to(device)
+
+# Load the dataset
+train_dataset = load_dataset(args.data_path, "train")
+valid_dataset = load_dataset(args.data_path, "valid")
+
+train_loader = DataLoader(
+    train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=32
+)
+valid_loader = DataLoader(
+    valid_dataset, batch_size=args.batch_size, shuffle=False, num_workers=32
+)
+
+optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+loss_fn = torch.nn.BCELoss()
+\end{lstlisting}
+
+
+\subsubsection{Train}
+Train the model for a specified number of epochs, and use Binary Cross Entropy loss function and Dice loss function as the loss function.
+\begin{lstlisting}[language=Python, caption=train.py: Train, label=lst:train_train]
+for epoch in range(args.epochs):
+    model.train()
+    train_dice_score, train_bce_loss, train_dice_loss = 0, 0, 0
+
+    for batch in tqdm(train_loader, desc=f"Epoch {epoch + 1}/{args.epochs}"):
+        images = batch["image"].to(device).float()
+        masks = batch["mask"].to(device)
+
+        optimizer.zero_grad()
+        pred_masks = model(images)
+
+        d_score = dice_score(pred_masks, masks)
+        b_loss = loss_fn(pred_masks, masks)
+        d_loss = dice_loss(pred_masks, masks)
+
+        loss = b_loss + d_loss
+        loss.backward()
+        optimizer.step()
+
+        train_dice_score += d_score.item()
+        train_bce_loss += b_loss.item()
+        train_dice_loss += d_loss.item()
+\end{lstlisting}
+
+\subsubsection{Evaluate}
+Evaluate on validation set and save the best model (and log the results on wandb)
+
+\begin{lstlisting}[language=Python, caption=train.py: Evaluate, label=lst:train_evaluate]
+eval_dice_score, eval_bce_loss, eval_dice_loss = evaluate(
+    model, valid_loader, device
+)
+if eval_dice_score > best_eval_dice_score:
+    best_eval_dice_score = eval_dice_score
+    torch.save(
+        model.state_dict(),
+        f"saved_models/{args.model}_{epoch}_{eval_dice_score:.4f}.pth",
+    )
+
+if args.wandb:
+    wandb.log(
+        {
+            "train/dice_score": train_dice_score / len(train_loader),
+            "train/bce_loss": train_bce_loss / len(train_loader),
+            "train/dice_loss": train_dice_loss / len(train_loader),
+            "valid/dice_score": eval_dice_score,
+            "valid/bce_loss": eval_bce_loss,
+            "valid/dice_loss": eval_dice_loss,
+        }
+    )
+\end{lstlisting}
+
+\subsection{Evaluation}
+For evaluation, I use the same procedure as the training process, the only difference is the dataset and the model is not updated.
+
+\begin{lstlisting}[language=Python, caption=evaluate.py: Evaluate, label=lst:evaluate]
+def evaluate(net, data, device):
+    # implement the evaluation function here
+    net.eval()
+    dice_scores = []
+    bce_losses = []
+    dice_losses = []
+    bce_loss = torch.nn.BCELoss()
+    with torch.no_grad():
+        for batch in data:
+            images = batch["image"].to(device).float()
+            masks = batch["mask"].to(device)
+            pred_masks = net(images)
+            dice_scores.append(dice_score(pred_masks, masks).item())
+            bce_losses.append(bce_loss(pred_masks, masks).item())
+            dice_losses.append(dice_loss(pred_masks, masks).item())
+    return np.mean(dice_scores), np.mean(bce_losses), np.mean(dice_losses)
+\end{lstlisting}
+
+\subsection{Inference}
+For inference, I use the same procedure as the evaluation process, and this time, I need to load the state dict of the model and calculate the accuracy on the test set.
+
+\begin{lstlisting}[language=Python, caption=inference.py: Inference, label=lst:inference]
+def inference(model, device):
+    if "resnet34" in args.model:
+        model = ResNet34Unet(in_channels=3)
+    else:
+        model = UNet(in_channels=3)
+
+    model.load_state_dict(torch.load(args.model))
+    model.to(device)
+    model.eval()
+
+    test_dataset = load_dataset(args.data_path, "test")
+    test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
+
+    dice_score, _, _ = evaluate(model, test_loader, device=device)
+    print(f"Dice score: {dice_score:.4f}")
+\end{lstlisting}
+
+
+\subsection{Model Architecture}
+% Describe your model architecture in detail
+% Include model diagram if necessary
+
+\subsubsection{UNet}
+For the UNet model, I use almost the same architecture as the one in the paper.
+The only difference if that in the original paper, the DownConv layers do not use padding, so the output size is smaller than the input size divided by 2.
+However, in this implementation, I use padding, so the output size is the same as the input size divided by 2, since by this way, it is easier to implement the upsampling layer, and also easier to integrate with the ResNet34.
+
+
+The architecture of the UNet is shown below (the size of the input is 256x256, the size and the dimension of each layer output is annotated in the diagram):
+\begin{figure}[H] \label{fig:unet}
+    \centering
+    \includegraphics[width=1.0\textwidth]{src/images/unet.png}
+    \caption{UNet Architecture}
+\end{figure}
+
+For the implementation of the UNet, I refer to the code from a public repository \href{https://github.com/milesial/Pytorch-UNet}{milesial/Pytorch-UNet}.
+
+To simply describe the architecture, it can be divided into 3 parts:
+\begin{enumerate}
+    \item DoubleConv layers: The double convolutional layers, which is a series of convolutional layers with batch normalization and ReLU activation functions.
+    \item DownConv layers: The downsampling path of the UNet, which is a DoubleConv layer with max-pooling layers.
+    \item UpConv layers: The upsampling path of the UNet, which is a DoubleConv layer with bilinear upsampling layers.
+    \item Middle layer: The middle layer of the UNet, which is a DoubleConv layer.
+\end{enumerate}
+
+\paragraph{DoubleConv}
+The DoubleConv layer is a series of convolutional layers with batch normalization and ReLU activation functions. There was not BatchNorm in the original paper, but I add it for better performance.
+
+\begin{lstlisting}[language=Python, caption=models/unet.py: DoubleConv, label=lst:unet_doubleconv]
+class DoubleConv(nn.Module):
+def __init__(self, in_channels, out_channels):
+    super(DoubleConv, self).__init__()
+
+    layers = [
+        nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False),
+        nn.BatchNorm2d(out_channels),
+        nn.ReLU(inplace=True),
+        nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
+        nn.BatchNorm2d(out_channels),
+        nn.ReLU(inplace=True),
+    ]
+
+    self.nn = nn.Sequential(*layers)
+
+def forward(self, x):
+    return self.nn(x)
+\end{lstlisting}
+
+\paragraph{DownConv}
+The DownConv layer is a DoubleConv layer with max-pooling layers. It is used to reduce the spatial size of the feature map and expand the channel dimension.
+
+\begin{lstlisting}[language=Python, caption=models/unet.py: DownConv, label=lst:unet_downconv]
+class DownConv(nn.Module):
+def __init__(self, in_channels, out_channels):
+    super(DownConv, self).__init__()
+
+    layers = [nn.MaxPool2d(kernel_size=2), DoubleConv(in_channels, out_channels)]
+
+    self.nn = nn.Sequential(*layers)
+
+def forward(self, x):
+    return self.nn(x)
+\end{lstlisting}
+
+\paragraph{UpConv}
+The UpConv layer is a DoubleConv layer with bilinear upsampling layers. It is used to increase the spatial size of the feature map and reduce the channel dimension.
+The input from previous layer (the mid / UpConv layer) is concatenated with the output from the DownConv layer at the same spatial size after upsampling, and then the DoubleConv layer is applied.
+\begin{lstlisting}[language=Python, caption=models/unet.py: UpConv, label=lst:unet_upconv]
+class UpConv(nn.Module):
+def __init__(self, in_channels, out_channels):
+    super(UpConv, self).__init__()
+
+    self.up = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2)
+    self.conv = DoubleConv(in_channels, out_channels)
+
+def forward(self, x1, x2):
+    x = self.up(x1)
+    x = torch.cat([x, x2], dim=1)
+    return self.conv(x)
+\end{lstlisting}
+
+\paragraph{Middle}
+The middle layer is a DoubleConv layer, which is used to connect the upsampling path and the downsampling path.
+
+\begin{lstlisting}[language=Python, caption=models/unet.py: UNet]
+self.mid = DownConv(down_channels[-1], up_channels[0])
+\end{lstlisting}
+
+\paragraph{UNet}
+The UNet model is a combination of the DoubleConv, DownConv, UpConv, and Middle layers. The output activation function is sigmoid, so we can get the binary segmentation mask and use Binary Cross Entropy loss function.
+I think the most confusing part is the skip connection, which is used to connect the output from the DownConv layer and the input from the UpConv layer at the same spatial size. Make sure which one should be popped from the stack is important.
+
+\begin{lstlisting}[language=Python, caption=models/unet.py: UNet, label=lst:unet]
+    class UNet(nn.Module):
+    def __init__(
+        self,
+        in_channels: int = 3,
+        down_channels: list[int] = [64, 128, 256, 512],
+        up_channels: list[int] = [1024, 512, 256, 128, 64],
+        out_channels: int = 1,
+    ):
+        super(UNet, self).__init__()
+
+        self.in_conv = DoubleConv(in_channels, down_channels[0])
+
+        self.down = nn.ModuleList()
+        self.up = nn.ModuleList()
+
+        for i in range(len(down_channels) - 1):
+            self.down.append(DownConv(down_channels[i], down_channels[i + 1]))
+
+        self.mid = DownConv(down_channels[-1], up_channels[0])
+
+        for i in range(len(up_channels) - 1):
+            self.up.append(UpConv(up_channels[i], up_channels[i + 1]))
+
+        self.out = nn.Sequential(
+            nn.Conv2d(up_channels[-1], out_channels, kernel_size=1),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x):
+        x = self.in_conv(x)
+
+        x_rec = [x]
+        for down in self.down:
+            x_rec.append(down(x))
+            x = x_rec[-1]
+
+        x = self.mid(x)
+
+        for up in self.up:
+            x = up(x, x_rec.pop())
+        return self.out(x)
+\end{lstlisting}
+
+
+\subsubsection{ResNet34Unet}
+For the ResNet34Unet model, I use the ResNet34 as the encoder and the UNet as the decoder. The ResNet34 model architecture is mostly same as the original paper and also the image in Lab2 Spec.
+
+The architecture of the ResNet34Unet is shown below (the size of the input is 256x256, the size and the dimension of each layer output is annotated in the diagram):
+\begin{figure}[H] \label{fig:resnet34_unet}
+    \centering
+    \includegraphics[width=1.0\textwidth]{src/images/resnet34_unet.png}
+    \caption{ResNet34Unet Architecture}
+\end{figure}
+
+For the left part of the ResNet34Unet, it is the same as the original ResNet34 model. And for the right part, it is the UNet model with two extra ConvTranspose2d layers to upsample the feature map to the original size (since the input is lowered by 4 times at the first layer of the ResNet34, so we need to upsample it by 4 times to get the original size).
+
+To break down the ResNet34Unet, it can be divided into 3 parts:
+\begin{enumerate}
+    \item ResBlock: The Residual Block of the ResNet34, used to extract the features from the input.
+    \item UpConv: The upsampling path of the UNet, which is a ConvTranspose2d layer with bilinear upsampling layers, used to upsample the feature map to the original size.
+\end{enumerate}
+
+\paragraph{ResBlock}
+The ResBlock layer is the same as the Residual Block of the ResNet34 model.
+
+There is a classmethod \texttt{make\_layer} to make a series of ResBlock layers, which is used to make a series of ResBlock layers, and automatically add the downsampling path to the first ResBlock layer when the channel number is doubled.
+
+\begin{lstlisting}[language=Python, caption=models/resnet34\_unet.py: ResBlock, label=lst:resblock]
+class ResBlock(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int, down_sample: bool = False):
+        super(ResBlock, self).__init__()
+
+        self.residual = nn.Sequential(
+            nn.Conv2d(
+                in_channels,
+                out_channels,
+                kernel_size=3,
+                padding=1,
+                stride=2 if down_sample else 1,
+                bias=False,
+            ),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+        )
+
+        self.shortcut = (
+            nn.Sequential(
+                nn.Conv2d(
+                    in_channels,
+                    out_channels,
+                    kernel_size=1,
+                    bias=False,
+                    stride=2 if down_sample else 1,
+                ),
+                nn.BatchNorm2d(out_channels),
+            )
+            if down_sample
+            else nn.Identity()
+        )
+
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        return self.relu(self.residual(x) + self.shortcut(x))
+
+    @classmethod
+    def make_layer(
+        cls, in_channels: int, out_channels: int, blocks: int, down_sample: bool = False
+    ):
+        layers = [cls(in_channels, out_channels, down_sample)]
+        for _ in range(1, blocks):
+            layers.append(cls(out_channels, out_channels))
+        return nn.Sequential(*layers)
+
+\end{lstlisting}
+
+\paragraph{UpConv}
+Same as one in the UNet model (see \ref{lst:unet_upconv}).
+
+\paragraph{ResNet34Unet}
+The ResNet34Unet model is a combination of the ResBlock and UpConv layers. The output activation function is sigmoid, so we can get the binary segmentation mask and use Binary Cross Entropy loss function.
+
+The implementation is different from the one in the Lab2 Spec, since the original UNet concatenates tensors with same dimensions, so I think we should follow this rule.
+To meet this requirement, I use another ResBlock as the bottleneck, then forward the output with the previous ResBlocks' output to the UNet decoder.
+
+By following this rule, the input of the first UpConv layer is by default $1024$ dim (bottleneck output) $-\text{(ConvTranspose2d)}-> 512$ dim $+$ $512$ dim (last ResBlock output) $= 1024$ dim, and undergoes a DoubleConv layer to reduce the channel dimension to $512$ dim.
+
+So, according to the above description, the implementation is as follows:
+\begin{lstlisting}[language=Python, caption=models/resnet34\_unet.py: ResNet34Unet, label=lst:resnet34_unet]
+class ResNet34Unet(nn.Module):
+    def __init__(
+        self,
+        in_channels: int = 3,
+        out_channels: int = 1,
+        blocks: list[int] = [3, 4, 6, 3],
+        down_channels: list[int] = [64, 64, 128, 256, 512],
+        up_channels: list[int] = [1024, 512, 256, 128, 64],
+    ):
+        super(ResNet34Unet, self).__init__()
+
+        self.in_conv = nn.Sequential(
+            nn.Conv2d(
+                in_channels,
+                down_channels[0],
+                kernel_size=7,
+                padding=3,
+                stride=2,
+                bias=False,
+            ),
+            nn.BatchNorm2d(down_channels[0]),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+        )
+
+        self.down = nn.ModuleList()
+        for i in range(len(down_channels) - 1):
+            self.down.append(
+                ResBlock.make_layer(
+                    down_channels[i],
+                    down_channels[i + 1],
+                    blocks[i],
+                    down_sample=(down_channels[i] != down_channels[i + 1]),
+                )
+            )
+
+        self.mid = ResBlock.make_layer(
+            down_channels[-1],
+            up_channels[0],
+            1,
+            down_sample=(down_channels[-1] != up_channels[0]),
+        )
+
+        self.up = nn.ModuleList()
+        for i in range(len(up_channels) - 1):
+            self.up.append(UpConv(up_channels[i], up_channels[i + 1]))
+
+        self.out = nn.Sequential(
+            nn.ConvTranspose2d(
+                up_channels[-1], up_channels[-1], kernel_size=2, stride=2
+            ),
+            nn.BatchNorm2d(up_channels[-1]),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(
+                up_channels[-1], up_channels[-1], kernel_size=2, stride=2
+            ),
+            nn.BatchNorm2d(up_channels[-1]),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(up_channels[-1], out_channels, kernel_size=1),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x):
+        x = self.in_conv(x)
+        x_rec = []
+        for layer in self.down:
+            x = layer(x)
+            x_rec.append(x)
+        x = self.mid(x)
+        for layer in self.up:
+            x = layer(x, x_rec.pop())
+        return self.out(x)
+\end{lstlisting}
+
+\subsection{Loss Function}
+% Explain the loss function(s) used
+% Include mathematical formulas if needed
+For loss function, two loss functions are used: Binary Cross Entropy loss function and Dice loss function.
+
+\paragraph{Binary Cross Entropy loss function}
+The Binary Cross Entropy loss function is a loss function that measures the performance of a binary classification model, so it is suitable for the binary segmentation task.
+Since it is implemented in PyTorch, so we won't need to dig into the details of the implementation.
+
+\paragraph{Dice loss function}
+The Dice loss function is a loss function that measures the performance of a binary segmentation model, so it is suitable for the binary segmentation task.
+
+\begin{equation}
+    \label{eq:dice_loss}
+    \text{DiceLoss}(p, y) = 1 - \frac{2 \sum_{i=1}^{N} y_i p_i}{\sum_{i=1}^{N} y_i + \sum_{i=1}^{N} p_i}
+\end{equation}
+
+and surprisingly, the gradient of the DiceLoss can be represented as a simple formula (in the referenced repository):
+
+\begin{equation}
+    \label{eq:dice_loss_gradient}
+    \frac{\partial \text{DiceLoss}(p, y)}{\partial p} = 1 - DiceLoss(p, y)
+\end{equation}
+
+after we figure out the formula of the loss and its gradient, we can implement it in the code.
+
+\begin{lstlisting}[language=Python, caption=utils.py: dice\_loss, label=lst:dice_loss]
+def dice_score(pred_mask, gt_mask):
+    # implement the Dice score here
+    assert pred_mask.shape == gt_mask.shape
+
+    if pred_mask.ndim == 3: # expand (C, H, W) -> (1, C, H, W)
+        pred_mask = pred_mask.unsqueeze(1)
+
+    pred_mask = torch.where(pred_mask > 0.5, True, False)
+    gt_mask = torch.where(gt_mask > 0.5, True, False)
+
+    common = torch.sum(pred_mask & gt_mask, dim=(1, 2, 3)) # common pixels between pred and gt
+    union = torch.sum(pred_mask, dim=(1, 2, 3)) + torch.sum(gt_mask, dim=(1, 2, 3))
+
+    union = torch.where(union == 0, 1, union) # avoid division by zero
+
+    return (2 * common / union).mean() # average over the batch
+
+
+def dice_loss(pred_mask, gt_mask):
+    return 1 - dice_score(pred_mask, gt_mask)
+\end{lstlisting}
+
+
+
+
+
+

@@ -1,0 +1,8 @@
+\subsection{Learning Rate Scheduler}
+In this project, I realized the importance of the learning rate scheduler.
+In the original setup, I only uses \texttt{Adam} optimizer with \texttt{CosineAnnealingLR} to schedule the learning rate, but it is converging too slow. And it converges to around 3.7 validation loss with a long long 500 epochs.
+
+After some discussion with my classmates, I tried to use \texttt{Adam} optimizer with \texttt{LinearLR} at the beginning of the training as warmup, and \texttt{CosineAnnealingLR} after that.
+With this setup, the training process converges to a validation loss around 1.3 in only 150 epochs.
+
+From this lesson, I learned that the choice of learning rate scheduler is very important for the training process.

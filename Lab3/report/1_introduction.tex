@@ -1,0 +1,18 @@
+In this lab, we will implement the MaskGIT for image inpainting.
+There are three stages in this lab: Train a VQVAE to encode the image into a discrete latent space, train a MaskGIT to generate the image from masked latent codes, and use the MaskGIT to inpaint the image.
+
+\subsection{VQVAE}
+    The VQVAE is a type of variational autoencoder that uses a discrete latent space.
+    The encoder maps the input image to a latent code, and the decoder maps the latent code to the reconstructed image.
+    The latent code is a discrete codebook, which is a set of discrete latent codes.
+    The decoder maps the latent code to the reconstructed image.
+
+\subsection{MaskGIT}
+    MaskGIT is a type of generative adversarial network that uses a masked latent code to generate the image.
+    In training stage, we use the VQVAE to encode the image into a latent code, and then use the MaskGIT to generate the image from the masked latent code.
+
+\subsection{Image Inpainting}
+    In the image inpainting stage, we use the MaskGIT to inpaint some masked images.
+    For each iteration, we paint all the masked pixels with the generated image from the MaskGIT.
+    Then, we choose specified percentage of the regions where the agent has less confidence to paint, and mask them again.
+    The percentage of each iteration is configured by the mask scheduling function.

@@ -1,0 +1,16 @@
+% Analyze:
+% - Model performance
+% - Challenges faced
+% - Potential improvements
+% - Insights gained
+
+\subsection{Alternative architectures}
+I think in this task, we can use more complex architectures to improve the performance of the model, since the input image contains various conditions, including different brightness, different contrast, different size, different angle, and the objuct itself can have a weird shape (especially cats).
+
+So, as an alternative, we can conduct experiments on the most famous model: Transformer.
+We can leverage its powerful attention mechanism to improve the performance of the model, let it more focus on the important parts of the image. And more on, we can use Mixure-of-Experts to improve the performance of the model, let it more robust to different conditions.
+
+\subsection{Potential Research Topics}
+Using transformer is a good idea, but everyone is using it nowadays, and the parameters is getting larger and larger.
+So, I think it is a good idea to distill the trained transformer model on this task into a smaller model, trying to keep the performance of the model and reduce the parameters.
+Or, on the other hand, we can try to use a small model, but try some fancy method to deal with the input image with various conditions, finally get comparable performance with transformer-based models.

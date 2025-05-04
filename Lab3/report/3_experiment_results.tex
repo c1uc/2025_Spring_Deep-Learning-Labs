@@ -1,0 +1,86 @@
+\subsection{Iterative Decoding}
+
+For iterative decoding, we implemented three different mask scheduling functions: linear, cosine, and square.
+There scheduling curve is shown in Figure \ref{fig:mask_scheduling_curve}.
+
+\begin{figure}[hb]
+    \centering
+    \includegraphics[width=0.5\textwidth]{src/gamma_funcs.png}
+    \caption{Mask Scheduling Curve}
+    \label{fig:mask_scheduling_curve}
+\end{figure}
+
+For their behavior in the iterative decoding, we can see the comparison in Figure \ref{fig:mask_scheduling_comparison}.
+From the figure, we can see that the linear scheduling function decreases faster than the square and cosine scheduling functions, and cosine and square scheduling functions have similar performance.
+
+\begin{table}[hb]
+    \centering
+    \begin{tabular}{c}
+        Linear
+        \includegraphics[width=0.6\textwidth]{src/mask_linear.png} \\
+        \hline
+        Square
+        \includegraphics[width=0.6\textwidth]{src/mask_square.png} \\
+        \hline
+        Cosine
+        \includegraphics[width=0.6\textwidth]{src/mask_cosine.png}
+    \end{tabular}
+    \caption{Comparison of different mask scheduling functions in iterative decoding}
+    \label{fig:mask_scheduling_comparison}
+\end{table}
+
+And the following figure \ref{fig:inpainting_comparison} is the comparison of the iterative decoding procedure.
+Their performance is really close, and cosine and square has slightly better performance than linear. They all have FID scores around 31 afrer 20 iterations of decoding.
+
+\begin{table}[hb]
+    \centering
+    \begin{tabular}{c}
+        Linear
+        \includegraphics[width=0.6\textwidth]{src/inpaint_linear.png} \\
+        \hline
+        Square
+        \includegraphics[width=0.6\textwidth]{src/inpaint_square.png} \\
+        \hline
+        Cosine
+        \includegraphics[width=0.6\textwidth]{src/inpaint_cosine.png}
+    \end{tabular}
+    \caption{Comparison of different mask scheduling functions in inpainting}
+    \label{fig:inpainting_comparison}
+\end{table}
+
+\subsection{Visualization}
+
+For the best performance decoding, I found that using square or cosine scheduling with sweet spot at 1 epoch has the best performance.
+And the following figure \ref{fig:inpainting_visualization} is the visualization of the decoding results.
+
+\begin{table}[hb]
+    \centering
+    \begin{tabular}{c|ccccc}
+        & Image 0 & Image 1 & Image 2 & Image 3 & Image 4 \\
+        \hline
+        Masked & 
+        \includegraphics[width=0.15\textwidth]{src/image_000_masked.png} &
+        \includegraphics[width=0.15\textwidth]{src/image_001_masked.png} &
+        \includegraphics[width=0.15\textwidth]{src/image_002_masked.png} &
+        \includegraphics[width=0.15\textwidth]{src/image_003_masked.png} &
+        \includegraphics[width=0.15\textwidth]{src/image_004_masked.png} \\
+        Decoded &
+        \includegraphics[width=0.15\textwidth]{src/image_000.png} &
+        \includegraphics[width=0.15\textwidth]{src/image_001.png} &
+        \includegraphics[width=0.15\textwidth]{src/image_002.png} &
+        \includegraphics[width=0.15\textwidth]{src/image_003.png} &
+        \includegraphics[width=0.15\textwidth]{src/image_004.png}
+    \end{tabular}
+    \caption{Visualization of inpainting results. Rows show masked input images and their corresponding decoded outputs.}
+    \label{fig:inpainting_visualization}
+\end{table}
+
+\subsection{FID Score}
+The result is shown in the screenshot \ref{fig:fid_score} below, the best FID score is 30.71.
+
+\begin{figure}[hb]
+    \centering
+    \includegraphics[width=0.8\textwidth]{src/fid_score.png}
+    \caption{FID Score}
+    \label{fig:fid_score}
+\end{figure}

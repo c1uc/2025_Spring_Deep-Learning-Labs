@@ -186,7 +186,6 @@ mask_scheduling/
 *.pt
 *.ckpt
 *.cpt
-*.tex
 *.gif
 *.csv
 

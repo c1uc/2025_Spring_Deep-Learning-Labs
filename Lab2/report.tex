@@ -1,0 +1,87 @@
+% Lab 2: Binary Semantic Segmentation Report
+\documentclass[11pt]{article}
+
+% Required packages
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}  % Set page margins
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{subcaption}
+\usepackage{listings}  % For code blocks
+\usepackage{xcolor}    % For colored code
+\usepackage{CJKutf8}   % For Chinese support
+
+% Code block settings
+\lstset{
+    language=Python,
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    breakatwhitespace=true,
+    breakindent=0pt,
+    keywordstyle=\color{blue},
+    stringstyle=\color{red},
+    commentstyle=\color{green!60!black},
+    numbers=left,
+    numberstyle=\tiny,
+    numbersep=5pt,
+    frame=single,
+    showstringspaces=false,
+    tabsize=2,
+    captionpos=b
+}
+
+% Document settings
+\title{DLP\\ Lab2: Binary Semantic Segmentation\\Report}
+\author{林睿騰 (Rui-Teng Lin)\\
+313551105}
+\date{\today}
+
+\begin{document}
+\begin{CJK*}{UTF8}{bsmi}  % Changed from gbsn to bsmi
+    \maketitle
+
+    % Example of how to include code blocks:
+    % \begin{lstlisting}[language=Python]
+    % def example_function():
+    %     print("Hello World")
+    % \end{lstlisting}
+
+    % For inline code:
+    % \texttt{print("Hello World")}
+
+    \newpage
+
+    \tableofcontents
+
+    \newpage
+
+    
+    \section{Implementation Details}
+
+    \input{1_implementation.tex}
+
+    \section{Data Preprocessing}
+
+    \input{2_preprocessing.tex}
+
+    \section{Analyze the experiment results}
+    
+    \input{3_analyze.tex}
+
+    \section{Execution steps}
+
+    \input{4_execution.tex}
+
+    \section{Discussion}
+    
+    \input{5_discussion.tex}
+
+    \section{References}
+    % List any papers, resources, or tools used
+    \href{https://github.com/milesial/Pytorch-UNet}{milesial/Pytorch-UNet}
+
+\end{CJK*}  % End Chinese support
+\end{document}

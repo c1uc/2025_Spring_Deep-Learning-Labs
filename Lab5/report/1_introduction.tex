@@ -1,0 +1,49 @@
+In this lab, we will implement a simple value-based reinforcement learning algorithm, Q-learning, to solve the Cartpole and ALE Pong environment.
+Not only Q-learning, we will also apply some tricks to see if they can improve the performance of the algorithm.
+
+\subsection{Q-learning}
+
+Q-learning is a model-free off-policy algorithm that learns the optimal policy by maximizing the expected sum of future rewards.
+
+The update rule can be written as:
+
+\begin{equation}
+    Q(s, a) \leftarrow Q(s, a) + \alpha [r + \gamma \max_{a'} Q(s', a') - Q(s, a)]
+\end{equation}
+
+\subsection{Double Q-learning}
+
+Since for Q-learning, the action-value function is estimated by maximizing the expected sum of future rewards, it is possible that the action-value function is overestimated.
+
+To alleviate this problem, we can use double Q-learning, which uses two Q-networks to estimate the action-value function, its update rule can be written as:
+
+\begin{equation}
+    Q(s, a) \leftarrow Q(s, a) + \alpha [r + \gamma Q'(s', \arg max_{a'} Q(s', a')) - Q(s, a)]
+\end{equation}
+
+\subsection{Prioritized Experience Replay}
+
+In Q-learning, we use replay memory to sample the transition $(s, a, r, s')$ uniformly. However, some transitions are more informative than others, so we can use prioritized experience replay to sample the transitions with higher priority.
+Also, among all the transitions, some transitions are more likely to be sampled, so we can use importance sampling to correct the bias.
+
+The priority and the weight of the transition can be calculated by:
+
+\begin{equation}
+    p_i = \frac{abs(\delta_i) + \epsilon}{\sum_{j=1}^{N} abs(\delta_j) + N \epsilon}
+\end{equation}
+
+\begin{equation}
+    w_i = \left( \frac{1}{N p_i} \right)^{\beta}
+\end{equation}
+
+where $N$ is the number of transitions in the replay memory, $\epsilon$ is a small constant to avoid the priority being zero, $\beta$ is the exponent of the weight.
+
+\subsection{N-step Return}
+In Q-learning, we use the next-step return to update the action-value function, but in N-step Q-learning, we use the N-step return to update the action-value function.
+
+The N-step return can be written as:
+
+\begin{equation}
+    G_t^{(n)} = r_{t+1} + \gamma r_{t+2} + \gamma^2 r_{t+3} + \cdots + \gamma^{n-1} r_{t+n} + \gamma^n Q(s_{t+n}, a_{t+n})
+\end{equation}
+

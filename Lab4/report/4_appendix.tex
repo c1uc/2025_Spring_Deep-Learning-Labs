@@ -1,0 +1,24 @@
+\section{Appendix}
+
+\subsection{Training Parameters of the Final Model}
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{|c|c|}
+        \hline
+        Parameter & Value \\
+        \hline
+        Fast training & False \\
+        Learning Rate & $3e-4$ \\
+        Optimizer & AdamW \\
+        Scheduler & CosineAnnealingLR \\
+        Batch Size & 2 \\
+        KL Annealing Type & Cyclical \\
+        KL Annealing Cycle & 40 \\
+        KL Annealing Ratio & 0.5 \\
+        Teacher Forcing Ratio & 0.0 \\
+        Number of Epochs & 400 \\
+        \hline
+    \end{tabular}
+    \caption{Training Parameters of the Final Model} \label{tab:training_parameters}
+\end{table}

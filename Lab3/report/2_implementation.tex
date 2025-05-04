@@ -1,0 +1,210 @@
+\subsection{Multi-head Attention}
+Implementation of the multi-head attention mechanism is straightforward.
+We just need to prepare the query, key, and value matrices, and then perform the attention mechanism.
+
+\begin{lstlisting}[language=Python, caption=models/Transformer/modules/layers.py: MultiHeadAttention.forward]
+def forward(self, x):
+    """Hint: input x tensor shape is (batch_size, num_image_tokens, dim),
+    because the bidirectional transformer first will embed each token to dim dimension,
+    and then pass to n_layers of encoders consist of Multi-Head Attention and MLP.
+    # of head set 16
+    Total d_k , d_v set to 768
+    d_k , d_v for one head will be 768 // 16.
+    """
+
+    # prepare q, k, v
+    b, n, _ = x.shape
+    q = self.W_Q(x)
+    k = self.W_K(x)
+    v = self.W_V(x)
+
+    # split q, k, v into num_heads
+    q = q.view(b, n, self.num_heads, self.dim_head).transpose(1, 2)
+    k = k.view(b, n, self.num_heads, self.dim_head).transpose(1, 2)
+    v = v.view(b, n, self.num_heads, self.dim_head).transpose(1, 2)
+
+    # calculate attn scores
+    scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.dim_head)
+    scores = torch.softmax(scores, dim=-1)
+    scores = self.attn_drop(scores)
+
+    # calculate output
+    out = torch.matmul(scores, v)
+    out = out.transpose(1, 2).contiguous().view(b, n, -1)
+    out = self.proj(out)
+
+    return out
+\end{lstlisting}
+
+\subsection{Training Stage}
+To complete the training stage, we need to implement the following steps:
+
+\begin{enumerate}
+    \item Encode the image into a latent code.
+    \item Randomly mask some pixels of the latent code.
+    \item Generate the image from the masked latent code.
+    \item Calculate the loss and update the model.
+\end{enumerate}
+
+And the imeplementation is again not too complex, just need to figure out the correct usage of each function and tensor.
+First, we need to encode the image into a latent code.
+
+\begin{lstlisting}[language=Python, caption=models/VQGAN\_Transformer.py: encode\_to\_z]
+def encode_to_z(self, x):
+    z_q, z_idx, _ = self.vqgan.encode(x)
+    return z_q, z_idx.reshape(z_q.shape[0], -1)
+\end{lstlisting}
+
+Second, we need to randomly mask some pixels of the latent code.
+After that, we need to generate the image from the masked latent code and return the logits and the masked latent code.
+In the implementation, I use the \texttt{torch.distributions.Bernoulli} to sample the mask.
+
+\begin{lstlisting}[language=Python, caption=models/VQGAN\_Transformer.py: forward]
+def forward(self, x):
+    z_q, z_idx = self.encode_to_z(x)
+
+    mask = torch.distributions.Bernoulli(probs=0.5 * torch.ones_like(z_idx)).sample().bool()
+    masked_idx = z_idx.clone()
+    masked_idx[mask] = self.mask_token_id
+
+    logits = self.transformer(masked_idx)
+
+    return logits, z_idx
+\end{lstlisting}
+
+And finally, we need to calculate the loss and update the model.
+Since the z\_idx is the one-hot encoded masked parts, and the logits is the probability distribution of the masked parts, we can use the \texttt{nn.CrossEntropyLoss} to calculate the loss between the logits and the masked latent code.
+
+For evaluation, we just calculate the loss of the validation set, and is almost the same as the training stage. So I will not repeat it here.
+
+\begin{lstlisting}[language=Python, caption=training\_transformer.py: TrainTransformer.train\_one\_epoch]
+def train_one_epoch(self, train_loader):
+    self.model.train()
+    total_loss = 0
+    idx = 0
+    for data in tqdm(train_loader):
+        data = data.to(self.args.device)
+        logits, z_idx = self.model(data)
+
+        loss = self.criterion(logits.reshape(-1, logits.shape[-1]), z_idx.reshape(-1))
+        total_loss += loss.item()
+
+        idx += 1
+        loss.backward()
+
+        if idx % self.args.accum_grad == 0:
+            self.optim.step()
+            self.optim.zero_grad()
+
+    self.optim.step()
+    self.optim.zero_grad()
+    self.scheduler.step()
+
+    avg_loss = total_loss / len(train_loader)
+    return avg_loss
+\end{lstlisting}
+
+\subsection{Image Inpainting}
+To inpaint the masked images, we need to implement the following steps:
+
+\begin{enumerate}
+    \item Encode the image into a latent code.
+    \item Predict the latent code in the masked parts.
+    \item Decode the predicted latent code into an image.
+\end{enumerate}
+
+The implementation is harder than the previous parts, so it takes me some time to figure out the correct usage of each function and tensor.
+
+To achieve iterative inpainting, we need to iterate the above steps for several times.
+And in each iteration, we need to update the mask and the predicted latent code according the scheduling strategy and confidence scores.
+
+The most easy thing in this stage is the scheduling strategy, which is implemented in the \texttt{gamma\_func} function, and is just a simple function that returns a lambda function.
+
+\begin{lstlisting}[language=Python, caption=models/VQGAN\_Transformer.py: gamma\_func]
+def gamma_func(self, mode="cosine"):
+    """Generates a mask rate by scheduling mask functions R.
+
+    Given a ratio in [0, 1), we generate a masking ratio from (0, 1].
+    During training, the input ratio is uniformly sampled;
+    during inference, the input ratio is based on the step number divided by the total iteration number: t/T.
+    Based on experiements, we find that masking more in training helps.
+    """
+    if mode == "linear":
+        return lambda x: 1 - x
+    elif mode == "cosine":
+        return lambda x: math.cos(x * math.pi / 2)
+    elif mode == "square":
+        return lambda x: 1 - x ** 2
+    else:
+        raise NotImplementedError
+\end{lstlisting}
+
+In order to have a better view of the iterative inpainting process, I firstly implement the one iteration inpainting.
+
+First, convert the image into a latent code, and then mask the latent code with a specific code, and then pass the masked latent code to the transformer.
+After that, apply the softmax to the logits and find the maximum probability for each token value.
+Then, update the mask and the predicted latent code according the scheduling strategy and confidence scores.
+In the process, we need to add back the original(non-masked) token values to the predicted latent code.
+Also, a temperature is applied to the confidence scores to add some randomness to the prediction.
+
+\begin{lstlisting}[language=Python, caption=models/VQGAN\_Transformer.py: MaskGit.inpainting]
+@torch.no_grad()
+def inpainting(self, z_indices, mask_bc, mask_num, ratio):
+    masked_z_idx = z_indices.clone()
+    masked_z_idx[mask_bc] = self.mask_token_id
+    logits = self.transformer(masked_z_idx)
+    # Apply softmax to convert logits into a probability distribution across the last dimension.
+    logits = torch.softmax(logits, dim=-1)
+
+    # FIND MAX probability for each token value
+    z_indices_predict_prob, z_indices_predict = torch.max(logits, dim=-1)
+    
+    ratio = self.gamma(ratio)
+    # predicted probabilities add temperature annealing gumbel noise as confidence
+    g = torch.distributions.Gumbel(0, 1).sample(z_indices_predict.shape).to(z_indices_predict.device)  # gumbel noise
+    temperature = self.choice_temperature * (1 - ratio)
+    
+    # hint: If mask is False, the probability should be set to infinity, so that the tokens are not affected by the transformer's prediction
+    z_indices_predict_prob = torch.where(mask_bc, z_indices_predict_prob, torch.tensor(float('inf')))
+    confidence = z_indices_predict_prob + temperature * g
+    
+    # sort the confidence for the rank
+    sorted_confidence, sorted_indices = torch.sort(confidence, dim=-1)
+    
+    # define how much the iteration remain predicted tokens by mask scheduling
+    mask_bc = torch.zeros_like(mask_bc)
+    mask_bc[:, sorted_indices[:, :int(mask_num * ratio)]] = 1
+    mask_bc = mask_bc.bool()
+
+    # At the end of the decoding process, add back the original(non-masked) token values
+    z_indices_predict[~mask_bc] = z_indices[~mask_bc]
+
+    return z_indices_predict, mask_bc
+\end{lstlisting}
+
+The last missing piece in this stage is to run iterative inpainting for several times (some of the given code is pruned to save space).
+I just need to iterate the inpainting process for several times, make sure to forward the new mask and predicted latent code to the inpainting function.
+
+\begin{lstlisting}[language=Python, caption=inpainting.py: MaskGIT.inpainting]
+def inpainting(self, image, mask_b, i):  # MakGIT inference
+    self.model.eval()
+    with torch.no_grad():
+        z_indices = self.model.encode_to_z(image)[1]  # z_indices: masked tokens (b,16*16)
+        mask_num = mask_b.sum()  # total number of mask token
+        z_indices_predict = z_indices
+        mask_bc = mask_b
+        mask_b = mask_b.to(device=self.device)
+        mask_bc = mask_bc.to(device=self.device)
+
+        ratio = 0
+        # iterative decoding for loop design
+        # Hint: it's better to save original mask and the updated mask by scheduling separately
+        for step in range(self.total_iter):
+            if step == self.sweet_spot:
+                break
+            ratio = step / self.total_iter  # this should be updated
+
+            z_indices_predict, mask_bc = self.model.inpainting(z_indices_predict, mask_bc, mask_num, ratio)
+\end{lstlisting}
+
+

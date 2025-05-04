@@ -1,0 +1,80 @@
+% Include:
+% - How to run the code
+% - Any additional instructions
+
+\subsection{How to run the code}
+
+Before running the code, make sure you are in the right directory.
+
+\lstinline|$ tree|
+
+\begin{verbatim}
+├── dataset
+├── saved_models
+└── src
+\end{verbatim}
+
+You can run the code by executing the following command:
+
+First, install the dependencies:
+
+\begin{lstlisting}[language=bash, caption=Install the dependencies, label=lst:install_dependencies]
+pip install -r requirements.txt
+\end{lstlisting}
+
+Before running the code, you can disable wandb to prevent some issues.
+
+\begin{lstlisting}[language=bash, caption=Disable wandb, label=lst:disable_wandb]
+wandb disabled
+\end{lstlisting}
+
+To re-enable wandb, you can run the following command:
+
+\begin{lstlisting}[language=bash, caption=Enable wandb, label=lst:enable_wandb]
+wandb enabled
+\end{lstlisting}
+
+Then, run the training code:
+
+\begin{lstlisting}[language=bash, caption=How to run the training code, label=lst:run_train_code]
+# Run the code for training
+python src/train.py --data_path dataset/oxford-iiit-pet/
+\end{lstlisting}
+
+there are other parameters you can use to customize the training process:
+
+\begin{itemize}
+    \item \lstinline|--device|: the device to run the code on (default: cuda:1)
+    \item \lstinline|--seed|: the seed for the random number generator (default: 88)
+    \item \lstinline|--epochs|: the number of epochs to train the model (default: 500)
+    \item \lstinline|--batch_size|: the batch size for the training process (default: 64)
+    \item \lstinline|--learning_rate|: the learning rate for the training process (default: 7e-4)
+    \item \lstinline|--model|: the model to use for the training process (default: resnet34\_unet), you can choose from: resnet34\_unet, unet
+    \item \lstinline|--wandb|: whether to use wandb for logging (default: True)
+\end{itemize}
+
+For my own results, I used the following commands:
+
+\begin{lstlisting}[language=bash, caption=How to run the training code for my own results, label=lst:run_train_code_my_results]
+# ResNet34 UNet
+python src/train.py \
+    --data_path dataset/oxford-iiit-pet/ \
+    -d cuda:1 \
+    -s 228922
+
+# UNet
+python src/train.py \
+    --data_path dataset/oxford-iiit-pet/ \
+    -d cuda:1 \
+    -s 228922 \
+    -m unet
+\end{lstlisting}
+
+After training, you can run the inference code:
+
+\begin{lstlisting}[language=bash, caption=How to run the inference code, label=lst:run_inference_code]
+# Run the code for inference
+# Replace the model_path with the path to the model you want to use for the inference
+# Model name should contain resnet34_unet or unet
+python src/inference.py --data_path dataset/oxford-iiit-pet/ --model_path saved_models/model.pth
+\end{lstlisting}

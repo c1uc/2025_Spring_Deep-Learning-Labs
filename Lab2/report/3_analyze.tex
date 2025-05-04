@@ -1,0 +1,66 @@
+% Include:
+% - Training curves (loss, accuracy, etc.)
+% - Performance metrics (IoU, Dice coefficient, etc.)
+% - Visualization of segmentation results
+
+\subsection{Training Curves}
+The training curves are shown in the following figure \ref{fig:train_score}.
+
+\begin{figure}[hb]
+    \centering
+    \includegraphics[width=0.8\textwidth]{src/images/score.png}
+    \caption{Training curves: Dice score. X-axis is the number of epochs, Y-axis is the Dice score.}
+    \label{fig:train_score}
+\end{figure}
+
+There two pairs of curves, one is for ResNet34 UNet (Orange) and the other is for UNet (Yellow). And the solid line is the dice score of the training set, and the dashed line is the dice score of the validation set.
+We can see from the figure, the performance of the two models are almost the same, but the ResNet34 UNet converges faster than UNet, and UNet finally convergs to a higher train accuracy than ResNet34 Unet.
+But the validation accuracy of ResNet34 UNet is higher than UNet, which means that ResNet34 UNet is less likely to overfit than UNet.
+
+\subsection{Performance Metrics}
+I use the Dice score on test set to evaluate the performance of the model. With the parameter given in the execution section \ref{lst:run_train_code_my_results}, the performance of the model is shown in the following table \ref{tab:test_score} and figure \ref{fig:test_score_image}. 
+
+\begin{table}[hb]
+    \centering
+    \begin{tabular}{|c|c|c|}
+        \hline
+        Model & Dice score\\
+        \hline
+        UNet & 0.9318\\
+        ResNet34 UNet & 0.9330\\
+        \hline
+    \end{tabular}
+    \caption{Dice score of the test set. The above is the ResNet34 UNet, and the below is the UNet.}
+    \label{tab:test_score}
+\end{table}
+
+\begin{figure}[hb]
+    \centering
+    \includegraphics[width=0.8\textwidth]{src/images/score_screenshot.png}
+    \caption{Dice score of the test set. The above is the UNet, and the below is the ResNet34 UNet.}
+    \label{fig:test_score_image}
+\end{figure}
+
+\subsection{Visualization of Segmentation Results}
+The visualization of the segmentation results is shown in the following figure.
+There are five samples in the figure, the first row is the original image, the second row is the ground truth mask, the third row is the prediction from the UNet, and the fourth row is the prediction from the ResNet34 UNet.
+
+\begin{figure}[hb]
+    \centering
+    \includegraphics[width=0.8\textwidth]{src/images/predictions_compare_UNet_ResNet34UNet.png}
+    \caption{Visualization of segmentation results. The above is the UNet, and the below is the ResNet34 UNet.}
+\end{figure}
+
+We can see from the figure, Resnet34 UNet has a better performance than UNet, it can predict the small objects better, and it also performs when dealing with the boundary of the objects. This behavior is more obvious in sample 1 and 3, where the prediction from Unet is totally distorted, but the prediction from Resnet34 UNet is still good.
+
+\subsection{Discussion}
+Throughout this project, I firstly experiment with both of the two models, but I found that ResNet34 UNet has a 3x faster training speed than UNet, so I use ResNet34 UNet for following experiments.
+
+Secondly, I conducted experiments on learning rate, batch size, and number of epochs, and I found that the learning rate have a significant impact on the performance of the model, but the batch size and number of epochs have a little impact.
+For example, when the learning rate is set to 1e-4 to 1e-3, the performance of ResNet34 UNet about the same, as for learnging rate 1e-5, it converges too slow that it cant converge to a good accuracy in 500 epochs.
+The batch size is set to 64, is not because it leads to a better accuracy, but because it leads to A LOT faster training speed without out of memory error. And the number of epochs is set to 500, is because I found that the performance of the model is almost saturated after 500 epochs, and it is not necessary to train the model for more epochs.
+
+After I decided the parameters, I conducted experiments on the transformation of the images, and I found that the performance of the model is not sensitive to the transformation of the images.
+Originally, I conducted lots of transformations on the training image, and the performance is almost the same as those experiment with half of the transformations.
+After then, I found that normalization and rotation have a significant impact on the performance of the model, and other transformations have little impact on the performance of the model.
+So, as a result, I kept some of the transformations, and using OneOf to prevent over-transformation, and normalize the image at the end.

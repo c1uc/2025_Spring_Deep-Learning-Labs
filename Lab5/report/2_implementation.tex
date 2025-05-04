@@ -1,0 +1,144 @@
+\subsection{Bellman Error}
+Calculation of the Bellman error in the original DQN algorithm is straightforward, as shown in the following code snippet:
+
+\begin{lstlisting}[language=Python]
+q_values = self.q_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
+
+# No gradient calculation for the target network
+next_q_values = self.target_net(next_states).max(dim=1)[0]
+next_q_values = next_q_values * (1 - dones)
+target_q_values = rewards + (self.gamma ** self.n_step_return) * next_q_values
+
+loss = torch.nn.functional.mse_loss(q_values, target_q_values)
+\end{lstlisting}
+
+
+\subsection{Double Q-learning}
+To convert the original DQN algorithm to double Q-learning, we need to modify the target network to estimate the action-value function.
+
+\begin{lstlisting}[language=Python]
+next_actions = self.q_net(next_states).argmax(dim=1)
+next_q_values = self.target_net(next_states).gather(1, next_actions.unsqueeze(1)).squeeze(1)
+target_q_values = rewards + (self.gamma ** self.n_step_return) * next_q_values
+\end{lstlisting}
+
+and the other part is the same as the original DQN algorithm.
+
+\subsection{Prioritized Experience Replay}
+To convert a normal replay buffer to a prioritized replay buffer, we need to modify the add method to calculate the priority of the transition. By default, the priority of newly added transition is set to infinity to let the agent pick it up in the next iteration and evaluate the state-action value.
+
+\begin{lstlisting}[language=Python]
+def add(self, transition, error=np.inf):
+
+    if len(self.buffer) < self.capacity:
+        self.buffer.append(transition)
+    else:
+        self.buffer[self.pos] = transition
+
+    self.priorities[self.pos] = abs(error)
+    self.pos = (self.pos + 1) % self.capacity
+
+    return
+\end{lstlisting}
+
+And the sample method is modified to sample the transition with the probability proportional to the priority, also calculate the weights for the transitions.
+In the implementation, I normalized the weights of the importance sampling with the maximum weight to stabilize the training.
+
+\begin{lstlisting}[language=Python]
+def sample(self, batch_size):
+
+    probs = self.priorities[:len(self.buffer)]
+
+    if np.any(probs):
+        probs = np.where(probs == np.inf, 10, 1).astype(np.float32)
+    else:
+        probs = probs ** self.alpha
+
+    probs /= probs.sum()
+
+    indices = np.random.choice(len(self.buffer), size=batch_size, p=probs)
+    samples = [self.buffer[i] for i in indices]
+    weights = (len(self.buffer) * probs[indices]) ** (-self.beta)
+    weights /= weights.sum()
+
+    return samples, weights, indices
+\end{lstlisting}
+
+\subsection{N-step Return}
+To calculate the n-step return, I use sliding window to store the n-step memory and calculate the n-step return.
+For implementation, I use deque to store the n-step memory and use the relation between the n-step return at each time step to calculate the n-step return of current and next state.
+
+The relation between n-step return at time T and T + 1 can be derived as follows:
+
+\begin{align*}
+G_T &= r_t + \gamma r_{t+1} + \gamma^2 r_{t+2} + ... + \gamma^{n-1} r_{t+n-1} \\
+G_{T+1} &= r_{t+1} + \gamma r_{t+2} + ... + \gamma^{n-2} r_{t+n-1} + \gamma^{n-1} r_{t+n} \\
+\end{align*}
+
+From these equations, we can see that:
+
+\begin{equation*}
+G_{T+1} = \frac{G_T - r_t}{\gamma} + \gamma^{n-1} r_{t+n}
+\end{equation*}
+
+This relation allows us to efficiently calculate the n-step return by maintaining a running sum and updating it incrementally, rather than recomputing the entire sum at each step. This is reflected in the implementation where we subtract the oldest reward and divide by gamma to get the next n-step return:
+
+
+\begin{lstlisting}[language=Python]
+if len(self.n_step_memory) == self.n_step_return:
+    ret = self.n_step_returns
+    s, a, r, s_, d = self.n_step_memory.popleft()
+    self.memory.add((s, a, ret, next_state, done))
+
+    self.n_step_returns -= r
+    self.n_step_returns /= self.gamma
+
+self.n_step_returns += reward * (self.gamma ** len(self.n_step_memory))
+self.n_step_memory.append((state, action, reward, next_state, done))
+
+
+
+\end{lstlisting}
+
+\subsection{WandB Logging}
+For logging, I records the loss, reward, step, and other metrics during the training.
+
+\begin{lstlisting}[language=Python]
+wandb.log(
+    {
+        "train/episode": ep,
+        "train/total_reward": total_reward,
+        "train/env_step_count": self.env_steps,
+        "train/update_count": self.train_steps,
+        "train/epsilon": self.epsilon,
+    }
+)
+
+wandb.log(
+    {
+        "eval/env_step_count": self.env_steps,
+        "eval/update_count": self.train_steps,
+        "eval/reward": eval_reward,
+    }
+)
+
+wandb.log(
+    {
+        "update/loss": loss.item(),
+        "update/q_values": q_values.mean().item(),
+        "update/target_q_values": target_q_values.mean().item(),
+        "update/step": self.train_steps,
+    }
+)
+\end{lstlisting}
+
+And other than the mettices, I also record the training config for better analysis.
+
+\begin{lstlisting}[language=Python]
+wandb.init(
+    project=f"DLP-Lab5-DQN-{args.env_name.replace('/', '-')}",
+    name=f"...",
+    save_code=False,
+    config=args,
+)
+\end{lstlisting}

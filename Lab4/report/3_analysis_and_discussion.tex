@@ -1,0 +1,81 @@
+\subsection{Teacher Forcing Ratio}
+this is the graph of the teacher forcing ratio between two group of runs, which are three runs with different kl annealing, one with decreasing ratio, and one totally disabled TFR:
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{src/tfr.png}
+    \caption{Teacher Forcing Ratio}
+\end{figure}
+
+and the following is the is the training and validation loss graph between the two groups, the solid line is the mean of the group, and the shaded area is the standard deviation:
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{|c|c|}
+        \hline
+        Training Loss & \includegraphics[width=0.6\textwidth]{src/tfr_train_loss.png} \\
+        \hline
+        Validation Loss & \includegraphics[width=0.6\textwidth]{src/tfr_val_loss.png} \\
+        \hline
+    \end{tabular}
+    \caption{Training and Validation Loss}
+\end{table}
+
+We can see that using TFR does not help the model to converge faster, since it might make the model more sensitive to initial conditions, and converge to a worse local minimum.
+In contrast, the model with disabled TFR can learn all the things by itself, and converge to a better local minimum.
+
+For the prediction score, the models trained with TFR only reaches 30 to 35, but without TFR, the model can reach 36 to 37.
+
+\subsection{KL Annealing}
+To analyze the effect of different KL annealing strategies, we run three experiments with different KL annealing strategies, and the following is the settings:
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{|l|c|c|c|}
+        \hline
+        Strategy & KL Cycle & KL Ratio \\
+        \hline
+        Cyclical & 40 & 0.5 \\
+        Monotonic &1 & 0.5 \\
+        Constant & - & - \\
+        \hline
+    \end{tabular}
+    \caption{KL Annealing Settings}
+\end{table}
+
+And the following table shows the betas, training loss, and validation loss of the three strategies:
+\begin{figure}[H]
+    \centering
+    \begin{tabular}{|c|c|}
+        \hline
+        Beta & \includegraphics[width=0.6\textwidth]{src/kl_beta.png} \\
+        \hline
+        Training Loss & \includegraphics[width=0.6\textwidth]{src/kl_train_loss.png} \\
+        \hline
+        Validation Loss & \includegraphics[width=0.6\textwidth]{src/kl_val_loss.png} \\
+        \hline
+    \end{tabular}
+    \caption{KL Annealing Analysis}
+\end{figure}
+
+We can see from the graph, monotonic KL annealing converges the fastest by its low limitation on the KL divergence loss, and finally reaches a validation loss about $0.14$, which is about the same as other two strategies.
+Constant KL annealing converges slower than monotonic because of its high limitation on the KL divergence loss, but it converges steadly because its target is always the same.
+Cyclical KL annealing converges the slowest, and the most unstable at the beginning, since its target loss changes in a cyclic manner, so it oscillates in the beginning. But in later stage when all of the three strategies have converged, it can reach a lower loss by its scheduling of the target loss to strike a balance between the reconstruction loss and the KL divergence loss.
+
+
+\subsection{PSNR per frame}
+the following is the PSNR per frame of the final model, which is trained with parameters in \ref{tab:training_parameters}:
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{src/psnr.png}
+    \caption{PSNR per frame}
+\end{figure}
+
+We can see that it performs well in most of the frames, with average psnr about 39, and its lowest is about 37.
+
+\subsection{Other training strategy analysis}
+At first, I tried some combinations of parameters with a long epoch, but they all have a score around 33, so I was thinking how to improve the performance.
+After some experiments, I observed that the images are normalized to be in the range of $[0, 1]$, but the frame generator model output is not normalized with sigmoid function, so I added a sigmoid function to the model output.
+
+After the modification, the model can reach a score around 36, some of them even reach 37.
