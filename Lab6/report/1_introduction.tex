@@ -1,0 +1,18 @@
+In this lab, we implement a DDPM model to generate images from a given class label.
+
+\subsection{Diffusion Process}
+The diffusion process is the main idea in Denoising Diffusion Probabilistic Models (DDPM). It has two parts: the forward diffusion process for adding noise in training and the reverse diffusion process for removing noise in inference.
+
+In the forward process, we add the noise to the image for each timestep $t$ with a scheduled variance $\beta_1, ..., \beta_T$.
+And for training, we add a noise at a random timestep $t$ to the image, and use a neural network to predict the step $t$ noise.
+After the network predicts the noise, we can remove the noise from the image and get a better estimation of the image.
+
+In the reverse process, we can use the network to predict the noise at each timestep, and gradually remove the noise from the image to get the clean image.
+
+Mathematically, if we denote the original image as $x_0$ and the noise-corrupted version at timestep $t$ as $x_t$, the forward process can be written as:
+
+\begin{equation}
+q(x_t|x_{t-1}) = \mathcal{N}(x_t; \sqrt{1-\beta_t}x_{t-1}, \beta_t\mathbf{I})
+\end{equation}
+
+The reverse process then learns to approximate $p(x_{t-1}|x_t)$ to gradually recover the clean image. This is done by training a model to predict the noise $\epsilon$ that was added, allowing us to remove it step by step.

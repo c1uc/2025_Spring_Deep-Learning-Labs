@@ -3,28 +3,30 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from diffusers import UNet2DModel, DDPMScheduler, DDPMPipeline
 from diffusers.optimization import get_cosine_schedule_with_warmup
-from dataloader import get_data_loaders
+from dataloader import get_data_loader
 from evaluator import evaluation_model
 import os
 from tqdm import tqdm
 import numpy as np
 from PIL import Image
 import json
+from torchvision.utils import make_grid, save_image
 
-
-class DDPM:
+class DDPM_UNet(nn.Module):
     def __init__(self, config):
-        self.config = config
+        super(DDPM_UNet, self).__init__()
+        
         self.device = config.get(
             "device", "cuda:0" if torch.cuda.is_available() else "cpu"
         )
-
+        
         self.model = UNet2DModel(
             sample_size=config["image_size"],
             in_channels=3,
             out_channels=3,
             layers_per_block=2,
             block_out_channels=(128, 128, 256, 256, 512, 512),
+            class_embed_type="identity",
             down_block_types=(
                 "DownBlock2D",
                 "DownBlock2D",
@@ -42,18 +44,36 @@ class DDPM:
                 "UpBlock2D",
             ),
         ).to(self.device)
+        
+        self.class_embedding = nn.Linear(24, 512).to(self.device)
+        
+    def forward(self, x, t, y):
+        class_emb = self.class_embedding(y)
+        x = self.model(x, t, class_emb)
+        return x
 
-        self.noise_scheduler = DDPMScheduler(num_train_timesteps=self.config["num_train_timesteps"])
+class DDPM:
+    def __init__(self, config):
+        self.config = config
+        self.device = config.get(
+            "device", "cuda:0" if torch.cuda.is_available() else "cpu"
+        )
+
+        self.model = DDPM_UNet(config)
+
+        self.noise_scheduler = DDPMScheduler(
+            num_train_timesteps=self.config["num_train_timesteps"],
+            beta_schedule=self.config["beta_schedule"],
+        )
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(), lr=config["learning_rate"]
         )
 
-        self.train_loader, self.val_loader = get_data_loaders(
+        self.train_loader = get_data_loader(
             img_dir=config["img_dir"],
             labels=config["labels"],
             objects=config["objects"],
             batch_size=config["batch_size"],
-            train_split=config["train_split"],
         )
 
         self.evaluator = evaluation_model(self.device)
@@ -67,7 +87,8 @@ class DDPM:
             for batch in self.train_loader:
                 images, labels = batch
                 images = images.to(self.device)
-
+                labels = labels.to(self.device)
+                
                 noise = torch.randn(images.shape).to(self.device)
                 timesteps = torch.randint(
                     0,
@@ -77,7 +98,7 @@ class DDPM:
                 ).long()
                 noisy_images = self.noise_scheduler.add_noise(images, noise, timesteps)
 
-                noise_pred = self.model(noisy_images, timesteps).sample
+                noise_pred = self.model(noisy_images, timesteps, labels).sample
 
                 loss = nn.MSELoss()(noise_pred, noise)
 
@@ -88,100 +109,106 @@ class DDPM:
                 progress_bar.update(1)
                 progress_bar.set_postfix(loss=loss.item())
 
-                break
-
             progress_bar.close()
 
-            if (epoch + 1) % 10 == 0:
+            if (epoch + 1) % 50 == 0:
                 self.save_checkpoint(epoch)
-                acc = self.evaluate()
-                print(f"Epoch {epoch + 1} validation accuracy: {acc}")
 
     def save_checkpoint(self, epoch):
-        pipeline = DDPMPipeline(unet=self.model, scheduler=self.noise_scheduler)
-        pipeline.save_pretrained(f"ddpm_model_epoch_{epoch+1}")
+        path = f"checkpoint_{self.config['num_train_timesteps']}_steps/ddpm_model_epoch_{epoch+1}.pth"
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        data = {
+            "model": self.model.state_dict(),
+            "optimizer": self.optimizer.state_dict(),
+        }
+        torch.save(data, path)
         
-    def load_checkpoint(self, epoch):
-        pipeline = DDPMPipeline.from_pretrained(f"ddpm_model_epoch_{epoch+1}")
-        self.model = pipeline.unet
-        self.noise_scheduler = pipeline.scheduler
+    def load_checkpoint(self, path):
+        data = torch.load(path, map_location=self.device)
+        self.model.load_state_dict(data["model"])
+        self.optimizer.load_state_dict(data["optimizer"])
 
-    def evaluate(self):
-        self.model.eval()
-        acc = []
-        with torch.no_grad():
-            for val_batch in self.val_loader:
-                val_images, val_labels = val_batch
-                val_images = val_images.to(self.device)
-                val_labels = val_labels.to(self.device)
-
-                pipeline = DDPMPipeline(unet=self.model, scheduler=self.noise_scheduler)
-                generated_images = pipeline(
-                    batch_size=val_images.shape[0],
-                    num_inference_steps=self.config["num_inference_steps"],
-                    output_type="tensor",
-                ).images
-
-                img = torch.tensor(generated_images).permute(0, 3, 1, 2).to(self.device)
-
-                acc.append(self.evaluator.eval(img, val_labels))
-        self.model.train()
-        return np.mean(acc)
-
-    def test(self):
+    def test(self, test_file):
         self.model.eval()
 
-        with open(self.config["test_file"], "r") as f:
+        with open(test_file, "r") as f:
             test_data = json.load(f)
 
         with open(self.config["objects"], "r") as f:
             objects_map = json.load(f)
             
-        test_dir = f"generated_images_{self.config['test_file'].split('/')[-1].split('.')[0]}"
+        test_dir = f"images/{test_file.split('/')[-1].split('.')[0]}"
         os.makedirs(test_dir, exist_ok=True)
-
-        for i, test_case in enumerate(test_data):
+        
+        results = []
+        accs = []
+        
+        for idx, test_case in enumerate(test_data):
             label = torch.zeros(24)
             for obj in test_case:
                 label[objects_map[obj]] = 1
+                
+            denoise_process = []
 
-            pipeline = DDPMPipeline(unet=self.model, scheduler=self.noise_scheduler)
-            image = pipeline(
-                batch_size=1,
-                num_inference_steps=self.config["num_inference_steps"],
-                output_type="numpy",
-            ).images[0]
+            x = torch.randn(1, 3, 64, 64).to(self.device)
+            y = label.unsqueeze(0).to(self.device)
+            
+            for i, t in enumerate(self.noise_scheduler.timesteps):
+                with torch.no_grad():
+                    r = self.model(x, t, y).sample
 
-            image = (image * 255).round().astype("uint8")
-            Image.fromarray(image).save(f"{test_dir}/test_{i}.png")
-
-            image_tensor = (
-                torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0).float() / 255.0
-            )
-            image_tensor = image_tensor.to(self.device)
-            label = label.unsqueeze(0).to(self.device)
-
-            acc = self.evaluator.eval(image_tensor, label)
-            print(f"Test case {i} accuracy: {acc}")
+                x = self.noise_scheduler.step(r, t, x).prev_sample
+                
+                if i % (self.config["num_inference_steps"] // 10) == 0:
+                    denoise_process.append(x.clone())
+                
+            acc = self.evaluator.eval(x, y)
+            accs.append(acc)
+            
+            denoise_process.append(x.clone())
+            denoise_process = torch.cat(denoise_process, dim=0)
+            
+            image_tensor = make_grid(denoise_process / 2 + 0.5, nrow=denoise_process.shape[0])
+            save_image(image_tensor, f"{test_dir}/process_{idx}.png")
+            
+            save_image(x / 2 + 0.5, f"{test_dir}/{idx}.png")
+            
+            results.append(x)
+            
+        results = torch.cat(results, dim=0)
+        results = make_grid(results / 2 + 0.5, nrow=8)
+        save_image(results, f"{test_dir}/results.png")
+        
+        print(f"Average accuracy of {test_file}: {sum(accs) / len(accs)}")
 
 
 if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--test", type=str, default=None)
+    parser.add_argument("--timesteps", type=int, default=100)
+    args = parser.parse_args()
+    
+    timesteps = args.timesteps
     config = {
-        "device": "cuda:3",
-        "learning_rate": 1e-4,
-        "num_epochs": 100,
-        "num_train_timesteps": 1000,
-        "batch_size": 8,
+        "device": "cuda:1",
+        "learning_rate": 1e-5,
+        "num_epochs": 200,
+        "batch_size": 32,
         "image_size": 64,
-        "num_inference_steps": 50,
-        "train_split": 0.8,
+        "num_train_timesteps": timesteps,
+        "num_inference_steps": timesteps,
+        "beta_schedule": "squaredcos_cap_v2",
         "img_dir": "iclevr/",
         "labels": "annotation/train.json",
         "objects": "annotation/objects.json",
-        "test_file": "annotation/test.json",
     }
 
     ddpm = DDPM(config)
-    ddpm.train()
-    # ddpm.load_checkpoint(99)
-    ddpm.test()
+    if args.test is None:
+        ddpm.train()
+        
+    ddpm.load_checkpoint(f"checkpoint_{timesteps}_steps/ddpm_model_epoch_250.pth" if args.test is None else args.test)
+    for f in ["annotation/test.json", "annotation/new_test.json", "annotation/extra.json"]:
+        ddpm.test(f)

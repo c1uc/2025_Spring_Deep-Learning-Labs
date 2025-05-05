@@ -41,41 +41,20 @@ class CLEVRDataset(Dataset):
 
         return image, label_tensor
 
+def get_data_loader(img_dir, labels, objects, batch_size=32):
+    transform = transforms.Compose([
+        transforms.Resize((64, 64)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+    ])
 
-def get_data_loaders(
-    img_dir, labels, objects, batch_size=64, train_split=0.8, random_seed=42
-):
-    # Set random seed for reproducibility
-    random.seed(random_seed)
-
-    # Define transforms
-    transform = transforms.Compose(
-        [
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-        ]
-    )
-
-    # Create dataset
     dataset = CLEVRDataset(img_dir, labels, objects, transform=transform)
 
-    # Split dataset
-    dataset_size = len(dataset)
-    train_size = int(train_split * dataset_size)
-    val_size = dataset_size - train_size
-
-    train_dataset, val_dataset = torch.utils.data.random_split(
-        dataset, [train_size, val_size]
-    )
-
-    # Create dataloaders
     train_loader = DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True, num_workers=4
+        dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=4,
     )
 
-    val_loader = DataLoader(
-        val_dataset, batch_size=batch_size, shuffle=False, num_workers=4
-    )
-
-    return train_loader, val_loader
+    return train_loader

@@ -1,0 +1,95 @@
+The synthetic image grids are shown in Figure \ref{fig:synthetic_image_grids} and \ref{fig:synthetic_image_grids_new}.
+And the process of generating a image with label ["red sphere", "cyan cylinder", "cyan cube"] is shown in Figure \ref{fig:process}.
+Also, the accuracy of the output images are shown in Figure \ref{fig:accuracy_100}.
+
+The parameters of the model are shown in Table \ref{tab:parameters}.
+
+\begin{figure}[hb]
+    \centering
+    \includegraphics[width=0.8\textwidth]{src/test_results.png}
+    \caption{Synthetic image grids of test.json}
+    \label{fig:synthetic_image_grids}
+\end{figure}
+
+\begin{figure}[hb]
+    \centering
+    \includegraphics[width=0.8\textwidth]{src/new_test_results.png}
+    \caption{Synthetic image grids of new\_test.json}
+    \label{fig:synthetic_image_grids_new}
+\end{figure}
+
+\begin{figure}[hb]
+    \centering
+    \includegraphics[width=0.8\textwidth]{src/process_0.png}
+    \caption{The process of generating a image with label ["red sphere", "cyan cylinder", "cyan cube"]}
+    \label{fig:process}
+\end{figure}
+
+\begin{figure}[hb]
+    \centering
+    \includegraphics[width=0.8\textwidth]{src/acc_100.png}
+    \caption{The accuracy of the output images}
+    \label{fig:accuracy_100}
+\end{figure}
+
+\subsection{Extra experiments}
+Aside from the experiments with the parameters in Table \ref{tab:parameters}, I also tried to use different parameters to train the model.
+To be specific, I tried to use different training / evaluation steps, and maintaining other parameters the same.
+The results with 500 training/evaluation steps are shown in Table \ref{tab:500_steps}, and the results with 1000 training/evaluation steps are shown in Table \ref{tab:1000_steps}.
+
+We can see from the results that using more training/evaluation steps does not always lead to better results, even their result of label ["red sphere", "cyan cylinder", "cyan cube"] are missing one object.
+In my opinion that using more training/evaluation steps does not lead to better results because of the following reasons:
+
+\subsubsection{Difficulty of the task}
+When the number of timesteps is large, the perturbation to predict is more difficult, so it can't learn the mapping in a short time.
+
+\subsubsection{Too few epochs}
+Like above, when the timesteps is large but the number of epochs is not enough, the training process does not cover all the timesteps enough, so the model can't learn the mapping.
+
+\subsubsection{Error accumulation}
+When the number of timesteps is large, the error of the model will accumulate, so the result will be worse.
+
+\begin{table}[ht]
+    \centering
+    \begin{tabular}{|c|}
+        \hline
+        Synthetic image grids of test.json \\
+        \includegraphics[width=0.9\textwidth]{src/500/test_results.png} \\
+        \hline
+        Synthetic image grids of new\_test.json \\
+        \includegraphics[width=0.9\textwidth]{src/500/new_test_results.png} \\
+        \hline
+        The process of generating a image with label ["red sphere", "cyan cylinder", "cyan cube"] \\
+        \includegraphics[width=0.9\textwidth]{src/500/process_0.png} \\
+        \hline
+        The accuracy of the output images \\
+        \includegraphics[width=0.9\textwidth]{src/500/acc_500.png} \\
+        \hline
+    \end{tabular}
+    \caption{Results with 500 training/evaluation steps}
+    \label{tab:500_steps}
+\end{table}
+
+\begin{table}[ht]
+    \centering
+    \begin{tabular}{|c|}
+        \hline
+        Synthetic image grids of test.json \\
+        \includegraphics[width=0.9\textwidth]{src/1000/test_results.png} \\
+        \hline
+        Synthetic image grids of new\_test.json \\
+        \includegraphics[width=0.9\textwidth]{src/1000/new_test_results.png} \\
+        \hline
+        The process of generating a image with label ["red sphere", "cyan cylinder", "cyan cube"] \\
+        \includegraphics[width=0.9\textwidth]{src/1000/process_0.png} \\
+        \hline
+        The accuracy of the output images \\
+        \includegraphics[width=0.9\textwidth]{src/1000/acc_1000.png} \\
+        \hline
+    \end{tabular}
+    \caption{Results with 1000 training/evaluation steps}
+    \label{tab:1000_steps}
+\end{table}
+
+
+

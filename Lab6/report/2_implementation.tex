@@ -1,0 +1,117 @@
+In the implementation, I use the UNet model and DDPM scheduler from diffusers library.
+
+The workflow of a UNet2DModel can be described as follows:
+\begin{enumerate}
+    \item Given a image $x_0$ and a label $y$, a timestep $t$ is sampled from the noise scheduler.
+    \item Mix the image with a noise $\epsilon$ to get a noisy image $x_t$
+    \item Embed the label $y$ and the timestep $t$ to get the embedding $e_y$ and $e_t$ (In this implementation, we use a linear layer to embed the label and use a sinusoidal embedding for the timestep).
+    \item Get embedding $e$ = $e_y + e_t$
+    \item Pass the noisy image $x_t$ through all the small ResNet blocks (down, mid, up) in the UNet model, the output of each block is added with the embedding $e$.
+    \item The output of the last block is passed through a final out layer to get the predicted noise $\epsilon_\theta(x_t, t, y)$
+\end{enumerate}
+
+And the functions of a DDPM scheduler are as following formulas:
+Beta scheduling in squaredcos\_cap\_v2 with $s = 0.008$ and $\beta_{max} = 0.999$:
+\begin{align}
+    \bar{\alpha}(t) = \cos^2\left(\frac{t+s}{1+s}\frac{\pi}{2}\right), &\quad s = 0.008 \\
+    \beta_t = \min\left(1 - \frac{\bar{\alpha}(\frac{t}{T})}{\bar{\alpha}(\frac{t-1}{T})}, \beta_{max}\right) &\quad \text{for } t = 1,\ldots,T
+\end{align}
+
+Add noise function:
+\begin{equation}
+    x_t = \sqrt{\bar{\alpha}_t} x_0 + \sqrt{1-\bar{\alpha}_t} \epsilon, \quad \epsilon \sim \mathcal{N}(0,I)
+\end{equation}
+
+Step function, where $\alpha_t = 1 - \beta_t$:
+\begin{equation}
+    x_{t-1} = \frac{1}{\sqrt{\alpha_t}}\left(x_t - \frac{1-\alpha_t}{\sqrt{1-\bar{\alpha}_t}}\epsilon_\theta(x_t,t,y)\right) + \sqrt{\beta_t}z, \quad z \sim \mathcal{N}(0,I)
+\end{equation}
+
+
+\begin{lstlisting}[language=Python]
+self.model = UNet2DModel(
+    sample_size=config["image_size"],
+    in_channels=3,
+    out_channels=3,
+    layers_per_block=2,
+    block_out_channels=(128, 128, 256, 256, 512, 512),
+    class_embed_type="identity",
+    down_block_types=(
+        "DownBlock2D",
+        "DownBlock2D",
+        "DownBlock2D",
+        "DownBlock2D",
+        "AttnDownBlock2D",
+        "DownBlock2D",
+    ),
+    up_block_types=(
+        "UpBlock2D",
+        "AttnUpBlock2D",
+        "UpBlock2D",
+        "UpBlock2D",
+        "UpBlock2D",
+        "UpBlock2D",
+    ),
+).to(self.device)
+
+self.class_embedding = nn.Linear(24, 512).to(self.device)
+\end{lstlisting}
+
+In the original tutorial, the dataset was single-label, so it can use a Embedding layer to embed the label.
+But in this lab, the images are multi-label, so we need to use a one-hot encoding, and pass through a linear layer to get the embedding.
+
+\subsection{Training}
+In the training process, we want to train a model that can predict the noise at each timestep.
+To achieve this goal, we randomly choose a timestep $t$ and a random noise $\epsilon$ to corrupt the image.
+
+\begin{lstlisting}[language=Python]
+images, labels = batch
+images = images.to(self.device)
+labels = labels.to(self.device)
+
+noise = torch.randn(images.shape).to(self.device)
+timesteps = torch.randint(
+    0,
+    self.config["num_train_timesteps"],
+    (images.shape[0],),
+    device=self.device,
+).long()
+noisy_images = self.noise_scheduler.add_noise(images, noise, timesteps)
+\end{lstlisting}
+
+After that, we can simply use a MSE loss to train the model to predict the noise.
+
+Loss function:
+\begin{equation}
+    L = \mathbb{E}_{x_0, \epsilon \sim \mathcal{N}(0, 1)} [\| \epsilon - \epsilon_\theta(x_t, t, y) \|^2]
+\end{equation}
+
+\begin{lstlisting}[language=Python]
+noise_pred = self.model(noisy_images, timesteps, labels).sample
+loss = nn.MSELoss()(noise_pred, noise)
+\end{lstlisting}
+
+\subsection{Inference}
+In inference, we want to recover a image given a noise and the label.
+
+\begin{lstlisting}[language=Python]
+x = torch.randn(1, 3, 64, 64).to(self.device)
+y = label.unsqueeze(0).to(self.device)
+\end{lstlisting}
+
+To recover the image, we run the reverse process for $T$ times.
+At each step, we use the model to predict the noise and then remove the noise from the image.
+
+\begin{equation}
+    x_{t-1} = \frac{1}{\sqrt{\alpha_t}} \left( x_t - \frac{\beta_t}{\sqrt{1-\bar{\alpha}_t}} \epsilon_\theta(x_t, t, y) \right)
+\end{equation}
+
+\begin{lstlisting}[language=Python]
+for i, t in enumerate(self.noise_scheduler.timesteps):
+    with torch.no_grad():
+        r = self.model(x, t, y).sample
+
+    x = self.noise_scheduler.step(r, t, x).prev_sample
+\end{lstlisting}
+
+After that, we can get a clean image given the label.
