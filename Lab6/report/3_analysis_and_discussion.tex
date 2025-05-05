@@ -37,8 +37,8 @@ Aside from the experiments with the parameters in Table \ref{tab:parameters}, I 
 To be specific, I tried to use different training / evaluation steps, and maintaining other parameters the same.
 The results with 500 training/evaluation steps are shown in Table \ref{tab:500_steps}, and the results with 1000 training/evaluation steps are shown in Table \ref{tab:1000_steps}.
 
-We can see from the results that using more training/evaluation steps does not always lead to better results, even their result of label ["red sphere", "cyan cylinder", "cyan cube"] are missing one object.
-In my opinion that using more training/evaluation steps does not lead to better results because of the following reasons:
+We can see from the results that using more training/evaluation steps does not always lead to better results.
+In my opinion that they perform worse because of the following reasons:
 
 \subsubsection{Difficulty of the task}
 When the number of timesteps is large, the perturbation to predict is more difficult, so it can't learn the mapping in a short time.
