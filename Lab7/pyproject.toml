@@ -1,0 +1,26 @@
+[project]
+name = "lab7"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "gymnasium>=1.1.1",
+    "mujoco>=3.3.2",
+    "torch>=2.7.0",
+    "tqdm>=4.67.1",
+    "wandb>=0.19.10",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu118"
+url = "https://download.pytorch.org/whl/cu118"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cu118", marker = "sys_platform == 'linux'" },
+]
+torchvision = [
+  { index = "pytorch-cu118", marker = "sys_platform == 'linux'" },
+]
