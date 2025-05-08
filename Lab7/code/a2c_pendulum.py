@@ -191,11 +191,11 @@ class A2CAgent:
         """Test the agent."""
         self.is_test = True
 
-        state, _ = self.test_env.reset(seed=self.seed)
-        done = False
         scores = []
 
         for _ in range(epochs):
+            state, _ = self.test_env.reset(seed=self.seed)
+            done = False
             score = 0
             while not done:
                 action = self.select_action(state)
@@ -203,6 +203,7 @@ class A2CAgent:
 
                 state = next_state
                 score += reward
+                print(reward)
 
             scores.append(score)
 
