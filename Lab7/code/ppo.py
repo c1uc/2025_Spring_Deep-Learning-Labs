@@ -212,7 +212,6 @@ class PPOAgent:
         episode_count = 0
         for ep in (pbar := tqdm(range(1, self.num_episodes))):
             score = 0
-            print("\n")
             for _ in range(self.rollout_len):
                 self.total_step += 1
                 action = self.select_action(state)
@@ -223,7 +222,7 @@ class PPOAgent:
 
                 # if episode ends
                 if done[0][0]:
-                    pbar.set_postfix(episode=episode_count, score=score)
+                    pbar.set_postfix(step=self.total_step, episode=episode_count, score=score)
                     wandb.log({
                         "train/step": self.total_step,
                         "train/episode": episode_count,
@@ -234,7 +233,6 @@ class PPOAgent:
                     state, _ = self.env.reset(seed=self.seed)
                     state = np.expand_dims(state, axis=0)
                     scores.append(score)
-                    # print(f"Episode {episode_count}: Total Reward = {score}")
                     score = 0
 
             actor_loss, critic_loss = self.update_model(next_state)
@@ -255,22 +253,30 @@ class PPOAgent:
         # termination
         self.env.close()
 
-    def test(self):
+    def test(self, epochs: int = 10):
         """Test the agent."""
         self.is_test = True
 
-        state, _ = self.test_env.reset(seed=self.seed)
-        done = False
-        score = 0
+        scores = []
+        for _ in range(epochs):
+            state, _ = self.test_env.reset(seed=self.seed)
+            done = False
+            score = 0
 
-        while not done:
-            action = self.select_action(state)
-            next_state, reward, done = self.step(action)
+            while not done:
+                action = self.select_action(state)
+                next_state, reward, done = self.step(action)
 
-            state = next_state
-            score += reward
+                state = next_state
+                score += reward
 
-        print("score: ", score)
+            scores.append(score)
+
+        wandb.log({
+            "test/avg_score": np.mean(scores),
+            "test/step": self.total_step
+        })
+        print(f"step: {self.total_step}, avg score: {np.mean(scores)}")
         self.test_env.close()
  
 def seed_torch(seed):
