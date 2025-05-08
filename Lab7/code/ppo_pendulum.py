@@ -36,11 +36,12 @@ if __name__ == "__main__":
  
     # environment
     env = gym.make("Pendulum-v1", render_mode="rgb_array")
+    test_env = gym.make("Pendulum-v1", render_mode="rgb_array")
     seed = 77
     random.seed(seed)
     np.random.seed(seed)
     seed_torch(seed)
     wandb.init(project="DLP-Lab7-PPO-Pendulum", name=args.wandb_run_name, save_code=True)
     
-    agent = PPOAgent(env, args)
+    agent = PPOAgent(env, test_env, args)
     agent.train()
