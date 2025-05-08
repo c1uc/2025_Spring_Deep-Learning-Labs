@@ -7,6 +7,7 @@
 # Instructor: Ping-Chun Hsieh
 
 
+from datetime import datetime
 import random
 import gymnasium as gym
 import numpy as np
@@ -39,15 +40,18 @@ class A2CAgent:
         seed (int): random seed
     """
 
-    def __init__(self, env: gym.Env, args=None):
+    def __init__(self, env: gym.Env, test_env: gym.Env, args=None):
         """Initialize."""
         self.env = env
+        self.test_env = gym.wrappers.RecordVideo(test_env, video_folder=args.test_folder)
         self.gamma = args.discount_factor
         self.entropy_weight = args.entropy_weight
         self.seed = args.seed
         self.actor_lr = args.actor_lr
         self.critic_lr = args.critic_lr
         self.num_episodes = args.num_episodes
+        self.test_interval = args.test_interval
+        self.wandb_run_name = args.wandb_run_name
         
         # device: cpu / gpu
         self.device = torch.device(args.device)
@@ -56,7 +60,7 @@ class A2CAgent:
         # networks
         obs_dim = env.observation_space.shape[0]
         action_dim = env.action_space.shape[0]
-        self.actor = Actor(obs_dim, action_dim).to(self.device)
+        self.actor = Actor(obs_dim, action_dim, action_scale=2.0).to(self.device)
         self.critic = Critic(obs_dim).to(self.device)
 
         # optimizer
@@ -104,8 +108,6 @@ class A2CAgent:
         
         ############TODO#############
         next_state = torch.FloatTensor(next_state).to(self.device)
-        reward = torch.FloatTensor(np.array([reward])).to(self.device)
-        done = torch.FloatTensor(np.array([done])).to(self.device)
         
         value = self.critic(state)
         with torch.no_grad():
@@ -124,7 +126,7 @@ class A2CAgent:
         # advantage = Q_t - V(s_t)
         ############TODO#############
         
-        advantage = target - value
+        advantage = target - value.detach()
         _, dist = self.actor(state)
         
         policy_loss = -(log_prob * advantage.detach()) + self.entropy_weight * dist.entropy().mean()
@@ -143,7 +145,7 @@ class A2CAgent:
         self.is_test = False
         step_count = 0
         
-        for ep in tqdm(range(1, self.num_episodes)): 
+        for ep in (pbar := tqdm(range(1, self.num_episodes))): 
             actor_losses, critic_losses, scores = [], [], []
             state, _ = self.env.reset(seed=self.seed)
             score = 0
@@ -157,47 +159,56 @@ class A2CAgent:
                 actor_losses.append(actor_loss)
                 critic_losses.append(critic_loss)
 
+                wandb.log({
+                    "update/step": step_count,
+                    "update/actor_loss": actor_loss,
+                    "update/critic_loss": critic_loss,
+                }) 
+            
                 state = next_state
                 score += reward
                 step_count += 1
                 # W&B logging
-                wandb.log({
-                    "step": step_count,
-                    "actor loss": actor_loss,
-                    "critic loss": critic_loss,
-                    }) 
                 # if episode ends
                 if done:
                     scores.append(score)
-                    print(f"Episode {ep}: Total Reward = {score}")
+                    # print(f"Episode {ep}: Total Reward = {score}")
                     # W&B logging
                     wandb.log({
-                        "episode": ep,
-                        "return": score
-                        })  
+                        "train/step": step_count,
+                        "train/episode": ep,
+                        "train/return": score
+                        })
+                    
+                    pbar.set_postfix(step=step_count, episode=ep, score=score)
+                    
+            if ep % self.test_interval == 0:
+                self.test()
+                self.is_test = False
 
-    def test(self, video_folder: str):
+    @torch.no_grad()
+    def test(self, epochs: int = 10):
         """Test the agent."""
         self.is_test = True
 
-        tmp_env = self.env
-        self.env = gym.wrappers.RecordVideo(self.env, video_folder=video_folder)
-
-        state, _ = self.env.reset(seed=self.seed)
+        state, _ = self.test_env.reset(seed=self.seed)
         done = False
-        score = 0
+        scores = []
 
-        while not done:
-            action = self.select_action(state)
-            next_state, reward, done = self.step(action)
+        for _ in range(epochs):
+            score = 0
+            while not done:
+                action = self.select_action(state)
+                next_state, reward, done = self.step(action)
 
-            state = next_state
-            score += reward
+                state = next_state
+                score += reward
 
-        print("score: ", score)
-        self.env.close()
+            scores.append(score)
 
-        self.env = tmp_env
+        print("avg score: ", np.mean(scores))
+        self.test_env.close()
+
 
 def seed_torch(seed):
     torch.manual_seed(seed)
@@ -210,22 +221,25 @@ def seed_torch(seed):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
-    parser.add_argument("--wandb-run-name", type=str, default="pendulum-a2c-run")
-    parser.add_argument("--actor-lr", type=float, default=3e-4)
+    parser.add_argument("--wandb-run-name", type=str, default=f"pendulum-a2c-run-{datetime.now().strftime('%Y%m%d-%H%M%S')}")
+    parser.add_argument("--actor-lr", type=float, default=1e-4)
     parser.add_argument("--critic-lr", type=float, default=1e-3)
     parser.add_argument("--discount-factor", type=float, default=0.9)
     parser.add_argument("--num-episodes", type=float, default=1000)
     parser.add_argument("--seed", type=int, default=77)
     parser.add_argument("--entropy-weight", type=int, default=1e-2) # entropy can be disabled by setting this to 0
+    parser.add_argument("--test-interval", type=int, default=10)
+    parser.add_argument("--test-folder", type=str, default="a2c-pendulum")
     args = parser.parse_args()
     
     # environment
     env = gym.make("Pendulum-v1", render_mode="rgb_array")
+    test_env = gym.make("Pendulum-v1", render_mode="rgb_array")
     seed = 77
     random.seed(seed)
     np.random.seed(seed)
     seed_torch(seed)
     wandb.init(project="DLP-Lab7-A2C-Pendulum", name=args.wandb_run_name, save_code=True)
     
-    agent = A2CAgent(env, args)
+    agent = A2CAgent(env, test_env, args)
     agent.train()

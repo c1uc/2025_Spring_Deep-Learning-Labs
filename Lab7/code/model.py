@@ -36,7 +36,7 @@ class BaseModel(nn.Module):
 
 
 class Actor(BaseModel):
-    def __init__(self, in_dim: int, out_dim: int, log_std_min: int = -20, log_std_max: int = 0):
+    def __init__(self, in_dim: int, out_dim: int, log_std_min: int = -20, log_std_max: int = 0, action_scale: float = 1.0):
         """Initialize."""
         super().__init__()
         
@@ -45,25 +45,29 @@ class Actor(BaseModel):
         
         self.fc = nn.Sequential(
             nn.Linear(in_dim, 128),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Linear(128, 128),
-            nn.Tanh(),
+            nn.ReLU(),
         )
 
         self.mean_fc = nn.Sequential(
             nn.Linear(128, 128),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Linear(128, out_dim),
             nn.Tanh(),
         )
 
         self.log_std_fc = nn.Sequential(
             nn.Linear(128, 128),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Linear(128, out_dim),
         )
 
         self.apply_init()
+        
+        self.log_std_min = log_std_min
+        self.log_std_max = log_std_max
+        self.action_scale = action_scale
         
         #############################
         
@@ -73,11 +77,11 @@ class Actor(BaseModel):
         ############TODO#############
         
         x = self.fc(state)
-        mean = self.mean_fc(x)
+        mean = self.mean_fc(x) * self.action_scale
         log_std = self.log_std_fc(x)
+        log_std = torch.clamp(log_std, self.log_std_min, self.log_std_max)
         dist = torch.distributions.Normal(mean, torch.exp(log_std))
         action = dist.sample()
-        action = torch.tanh(action)
 
         #############################
 
@@ -94,9 +98,9 @@ class Critic(BaseModel):
 
         self.nn = nn.Sequential(
             nn.Linear(in_dim, 128),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Linear(128, 128),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Linear(128, 1),
         )
 
