@@ -250,7 +250,13 @@ class PPOAgent:
             critic_losses.append(critic_loss)
             
             if self.total_step % self.test_interval == 0:
-                self.test()
+                avg_score = self.test()
+                wandb.log({
+                    "test/avg_score": avg_score,
+                    "test/step": self.total_step
+                })
+                print(f"step: {self.total_step}, avg score: {avg_score}")
+                
                 self.is_test = False
 
         # termination

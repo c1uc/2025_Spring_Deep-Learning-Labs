@@ -186,7 +186,13 @@ class A2CAgent:
                     pbar.set_postfix(step=step_count, episode=ep, score=score)
                     
             if ep % self.test_interval == 0:
-                self.test()
+                avg_score = self.test()
+                wandb.log({
+                    "test/avg_score": avg_score,
+                    "test/step": step_count
+                })
+                print(f"step: {step_count}, avg score: {avg_score}")
+                
                 self.is_test = False
 
     @torch.no_grad()
