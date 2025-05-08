@@ -112,7 +112,10 @@ class PPOAgent:
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, np.float64, bool]:
         """Take an action and return the response of the env."""
-        next_state, reward, terminated, truncated, _ = self.env.step(action)
+        if not self.is_test:
+            next_state, reward, terminated, truncated, _ = self.env.step(action)
+        else:
+            next_state, reward, terminated, truncated, _ = self.test_env.step(action)
         done = terminated or truncated
         next_state = np.reshape(next_state, (1, -1)).astype(np.float64)
         reward = np.reshape(reward, (1, -1)).astype(np.float64)
