@@ -90,7 +90,10 @@ class A2CAgent:
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, np.float64, bool]:
         """Take an action and return the response of the env."""
-        next_state, reward, terminated, truncated, _ = self.env.step(action)
+        if not self.is_test:
+            next_state, reward, terminated, truncated, _ = self.env.step(action)
+        else:
+            next_state, reward, terminated, truncated, _ = self.test_env.step(action)
         done = terminated or truncated
 
         if not self.is_test:
@@ -194,7 +197,7 @@ class A2CAgent:
         scores = []
 
         for _ in range(epochs):
-            state, _ = self.test_env.reset(seed=self.seed)
+            state, _ = self.test_env.reset()
             done = False
             score = 0
             while not done:
@@ -203,7 +206,6 @@ class A2CAgent:
 
                 state = next_state
                 score += reward
-                print(reward)
 
             scores.append(score)
 
