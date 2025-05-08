@@ -21,68 +21,7 @@ from torch.distributions import Normal
 import argparse
 import wandb
 from tqdm import tqdm
-
-def init_layer_uniform(layer: nn.Linear, init_w: float = 3e-3) -> nn.Linear:
-    """Init uniform parameters on the single layer."""
-    layer.weight.data.uniform_(-init_w, init_w)
-    layer.bias.data.uniform_(-init_w, init_w)
-
-    return layer
-
-
-class Actor(nn.Module):
-    def __init__(
-        self,
-        in_dim: int,
-        out_dim: int,
-        log_std_min: int = -20,
-        log_std_max: int = 0,
-    ):
-        """Initialize."""
-        super(Actor, self).__init__()
-
-        ############TODO#############
-        # Remeber to initialize the layer weights
-        
-        #############################
-
-    def forward(self, state: torch.Tensor) -> torch.Tensor:
-        """Forward method implementation."""
-        
-        ############TODO#############
-
-        #############################
-
-        return action, dist
-
-
-class Critic(nn.Module):
-    def __init__(self, in_dim: int):
-        """Initialize."""
-        super(Critic, self).__init__()
-
-        ############TODO#############
-        # Remeber to initialize the layer weights
-        
-        #############################
-
-    def forward(self, state: torch.Tensor) -> torch.Tensor:
-        """Forward method implementation."""
-        
-        ############TODO#############
-
-        #############################
-
-        return value
-    
-def compute_gae(
-    next_value: list, rewards: list, masks: list, values: list, gamma: float, tau: float) -> List:
-    """Compute gae."""
-
-    ############TODO#############
-
-    #############################
-    return gae_returns
+from model import Actor, Critic, compute_gae
 
 # PPO updates the model several times(update_epoch) using the stacked memory. 
 # By ppo_iter function, it can yield the samples of stacked memory by interacting a environment.

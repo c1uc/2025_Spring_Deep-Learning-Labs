@@ -19,65 +19,7 @@ import argparse
 import wandb
 from tqdm import tqdm
 from typing import Tuple
-
-def initialize_uniformly(layer: nn.Linear, init_w: float = 3e-3):
-    """Initialize the weights and bias in [-init_w, init_w]."""
-    layer.weight.data.uniform_(-init_w, init_w)
-    layer.bias.data.uniform_(-init_w, init_w)
-
-
-class Actor(nn.Module):
-    def __init__(self, in_dim: int, out_dim: int):
-        """Initialize."""
-        super(Actor, self).__init__()
-        
-        ############TODO#############
-        # Remeber to initialize the layer weights
-        
-        self.nn = nn.Sequential(
-            nn.Linear(in_dim, 128),
-            nn.ReLU(),
-            nn.Linear(128, 128),
-            nn.ReLU(),
-            nn.Linear(128, out_dim),
-        )
-        for layer in self.nn:
-            if isinstance(layer, nn.Linear):
-                initialize_uniformly(layer)
-        
-        #############################
-        
-    def forward(self, state: torch.Tensor) -> torch.Tensor:
-        """Forward method implementation."""
-
-        ############TODO#############
-        
-        action = self.nn(state)
-
-        #############################
-
-        return action, dist
-
-
-class Critic(nn.Module):
-    def __init__(self, in_dim: int):
-        """Initialize."""
-        super(Critic, self).__init__()
-        
-        ############TODO#############
-        # Remeber to initialize the layer weights
-        
-        #############################
-
-    def forward(self, state: torch.Tensor) -> torch.Tensor:
-        """Forward method implementation."""
-        
-        ############TODO#############
-
-        #############################
-
-        return value
-    
+from model import Actor, Critic
 
 class A2CAgent:
     """A2CAgent interacting with environment.
@@ -108,7 +50,7 @@ class A2CAgent:
         self.num_episodes = args.num_episodes
         
         # device: cpu / gpu
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device(args.device)
         print(self.device)
 
         # networks
@@ -161,7 +103,17 @@ class A2CAgent:
         mask = 1 - done
         
         ############TODO#############
-        # value_loss = ?
+        next_state = torch.FloatTensor(next_state).to(self.device)
+        reward = torch.FloatTensor(np.array([reward])).to(self.device)
+        done = torch.FloatTensor(np.array([done])).to(self.device)
+        
+        value = self.critic(state)
+        with torch.no_grad():
+            next_value = self.critic(next_state)
+            target = reward + self.gamma * next_value * mask
+
+        value_loss = F.mse_loss(value, target)
+
         #############################
 
         # update value
@@ -171,8 +123,14 @@ class A2CAgent:
 
         # advantage = Q_t - V(s_t)
         ############TODO#############
-        # policy_loss = ?
+        
+        advantage = target - value
+        _, dist = self.actor(state)
+        
+        policy_loss = -(log_prob * advantage.detach()) + self.entropy_weight * dist.entropy().mean()
+
         #############################
+
         # update policy
         self.actor_optimizer.zero_grad()
         policy_loss.backward()
@@ -251,8 +209,9 @@ def seed_torch(seed):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--wandb-run-name", type=str, default="pendulum-a2c-run")
-    parser.add_argument("--actor-lr", type=float, default=1e-4)
+    parser.add_argument("--actor-lr", type=float, default=3e-4)
     parser.add_argument("--critic-lr", type=float, default=1e-3)
     parser.add_argument("--discount-factor", type=float, default=0.9)
     parser.add_argument("--num-episodes", type=float, default=1000)
