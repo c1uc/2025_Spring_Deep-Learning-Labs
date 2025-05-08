@@ -6,6 +6,9 @@
 # Contributors: Wei Hung and Alison Wen
 # Instructor: Ping-Chun Hsieh
 
+import os
+os.environ["MUJOCO_GL"] = "egl"
+
 from datetime import datetime
 import random
 import gymnasium as gym
@@ -30,16 +33,18 @@ if __name__ == "__main__":
     parser.add_argument("--epsilon", type=int, default=0.2)
     parser.add_argument("--rollout-len", type=int, default=2000)  
     parser.add_argument("--update-epoch", type=float, default=10)
-    parser.add_argument("--test-interval", type=int, default=10)
+    parser.add_argument("--test-interval", type=int, default=5)
+    parser.add_argument("--test-folder", type=str, default="ppo-walker")
     args = parser.parse_args()
  
     # environment
     env = gym.make("Walker2d-v4", render_mode="rgb_array")
+    test_env = gym.make("Walker2d-v4", render_mode="rgb_array")
     seed = 77
     random.seed(seed)
     np.random.seed(seed)
     seed_torch(seed)
     wandb.init(project="DLP-Lab7-PPO-Walker", name=args.wandb_run_name, save_code=True)
     
-    agent = PPOAgent(env, args)
+    agent = PPOAgent(env, test_env, args)
     agent.train()
