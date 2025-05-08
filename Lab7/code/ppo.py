@@ -275,13 +275,9 @@ class PPOAgent:
 
             scores.append(score)
 
-        wandb.log({
-            "test/avg_score": np.mean(scores),
-            "test/step": self.total_step
-        })
-        print(f"step: {self.total_step}, avg score: {np.mean(scores)}")
         self.test_env.close()
- 
+        return np.mean(scores)
+    
 def seed_torch(seed):
     torch.manual_seed(seed)
     if torch.backends.cudnn.enabled:
