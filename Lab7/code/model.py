@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 from typing import List
+import numpy as np
+
 def compute_gae(
     next_value: list, rewards: list, masks: list, values: list, gamma: float, tau: float) -> List:
     """Compute gae."""
@@ -77,7 +79,7 @@ class Actor(BaseModel):
         ############TODO#############
         
         x = self.fc(state)
-        mean = self.mean_fc(x) * self.action_scale
+        mean = self.mean_fc(x) * torch.tensor(np.array(self.action_scale)).to(state.device)
         log_std = self.log_std_fc(x)
         log_std = torch.clamp(log_std, self.log_std_min, self.log_std_max)
         dist = torch.distributions.Normal(mean, torch.exp(log_std))
