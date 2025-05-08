@@ -249,7 +249,7 @@ class PPOAgent:
             actor_losses.append(actor_loss)
             critic_losses.append(critic_loss)
             
-            if self.total_step % self.test_interval == 0:
+            if ep % self.test_interval == 0:
                 avg_score = self.test()
                 wandb.log({
                     "test/avg_score": avg_score,
