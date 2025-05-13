@@ -3,38 +3,20 @@ import torch.nn as nn
 from typing import List
 import numpy as np
 
-def compute_gae(
-    next_value: list, rewards: list, masks: list, values: list, gamma: float, tau: float) -> List:
-    """Compute gae."""
-
-    ############TODO#############
-
-    values = values + [next_value]
-    gae = 0
-    gae_returns = []
-    
-    for step in reversed(range(len(rewards))):
-        delta = rewards[step] + gamma * values[step + 1] * masks[step] - values[step]
-        gae = delta + gamma * tau * masks[step] * gae
-        gae_returns.insert(0, gae + values[step])
-    
-    #############################
-    return gae_returns
-
-
-def initialize_uniformly(layer, init_w: float = 3e-3):
+def init(layer, init_w: float = 3e-3, out_dim: int = 128):
     """Initialize the weights and bias in [-init_w, init_w]."""
     if isinstance(layer, nn.Linear):
-        nn.init.uniform_(layer.weight, -init_w, init_w)
-        nn.init.zeros_(layer.bias)
+        layer.weight.data.uniform_(-init_w, init_w)
+        layer.bias.data.uniform_(-init_w, init_w)
+
 
 class BaseModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.nn = None
 
-    def apply_init(self, init_w: float = 3e-3):
-        self.apply(lambda layer: initialize_uniformly(layer, init_w))
+    def apply_init(self, init_w: float = 3e-3, out_dim: int = 128):
+        self.apply(lambda layer: init(layer, init_w, out_dim))
 
 
 class Actor(BaseModel):
@@ -45,31 +27,24 @@ class Actor(BaseModel):
         ############TODO#############
         # Remeber to initialize the layer weights
         
-        self.fc = nn.Sequential(
-            nn.Linear(in_dim, 128),
-            nn.ReLU(),
-            nn.Linear(128, 256),
-            nn.ReLU(),
-        )
-
         self.mean_fc = nn.Sequential(
-            nn.Linear(256, 128),
+            nn.Linear(in_dim, 256),
             nn.ReLU(),
-            nn.Linear(128, out_dim),
+            nn.Linear(256, out_dim),
             nn.Tanh(),
         )
-
+        
         self.log_std_fc = nn.Sequential(
-            nn.Linear(256, 128),
+            nn.Linear(in_dim, 256),
             nn.ReLU(),
-            nn.Linear(128, out_dim),
+            nn.Linear(256, out_dim),
         )
 
-        self.apply_init()
-        
+        self.apply_init(out_dim=out_dim)
+
+        self.action_scale = action_scale
         self.log_std_min = log_std_min
         self.log_std_max = log_std_max
-        self.action_scale = action_scale
         
         #############################
         
@@ -78,11 +53,8 @@ class Actor(BaseModel):
 
         ############TODO#############
         
-        x = self.fc(state)
-        mean = self.mean_fc(x) * torch.tensor(np.array(self.action_scale)).to(state.device)
-        log_std = self.log_std_fc(x)
-        log_std = torch.clamp(log_std, self.log_std_min, self.log_std_max)
-        dist = torch.distributions.Normal(mean, torch.exp(log_std))
+        x = self.mean_fc(state)
+        dist = torch.distributions.Normal(x * torch.tensor(np.array(self.action_scale)).to(state.device), torch.exp(torch.clamp(self.log_std_fc(state), self.log_std_min, self.log_std_max)))
         action = dist.sample()
 
         #############################
@@ -106,7 +78,7 @@ class Critic(BaseModel):
             nn.Linear(128, 1),
         )
 
-        self.apply_init()
+        self.apply_init(out_dim=1)
         
         #############################
 

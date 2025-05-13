@@ -6,9 +6,10 @@ from torch.distributions import Normal
 from model import Actor, Critic, compute_gae
 import numpy as np
 import gymnasium as gym
-from typing import List, Tuple
+from typing import List, Tuple, Callable
 from tqdm import tqdm
 import wandb
+import os
 
 # PPO updates the model several times(update_epoch) using the stacked memory. 
 # By ppo_iter function, it can yield the samples of stacked memory by interacting a environment.
@@ -51,10 +52,13 @@ class PPOAgent:
         seed (int): random seed
     """
 
-    def __init__(self, env: gym.Env, test_env: gym.Env, args):
+    def __init__(self, env: gym.Env, get_test_env: Callable[[], gym.Env], args):
         """Initialize."""
+        self.env_name = env.unwrapped.spec.id
         self.env = env
-        self.test_env = gym.wrappers.RecordVideo(test_env, video_folder=args.test_folder)
+        self.get_test_env = get_test_env
+        self.test_env = None
+        self.test_folder = args.test_folder
         self.gamma = args.discount_factor
         self.tau = args.tau
         self.batch_size = args.batch_size
@@ -94,7 +98,11 @@ class PPOAgent:
 
         # mode: train / test
         self.is_test = False
-
+        self.score_baseline = args.score_baseline
+        self.checkpoint_dir = args.checkpoint_dir
+        
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        
     def select_action(self, state: np.ndarray) -> np.ndarray:
         """Select an action from the input state."""
         state = torch.FloatTensor(state).to(self.device)
@@ -206,7 +214,7 @@ class PPOAgent:
         """Train the PPO agent."""
         self.is_test = False
 
-        state, _ = self.env.reset(seed=self.seed)
+        state, _ = self.env.reset()
         state = np.expand_dims(state, axis=0)
 
         actor_losses, critic_losses = [], []
@@ -250,25 +258,30 @@ class PPOAgent:
             critic_losses.append(critic_loss)
             
             if ep % self.test_interval == 0:
-                avg_score = self.test()
+                avg_score = self.test(current_episode=ep)
                 wandb.log({
                     "test/avg_score": avg_score,
                     "test/step": self.total_step
                 })
                 print(f"step: {self.total_step}, avg score: {avg_score}")
                 
+                if avg_score > self.score_baseline:
+                    torch.save(self.actor.state_dict(), f"{self.checkpoint_dir}/ppo_{self.env_name}_model_ep_{ep}_step_{self.total_step}_score_{int(avg_score)}.pth")
+                
                 self.is_test = False
 
         # termination
         self.env.close()
 
-    def test(self, epochs: int = 10):
+    def test(self, epochs: int = 10, current_episode: int = 0):
         """Test the agent."""
         self.is_test = True
+        self.test_env = self.get_test_env()
+        self.test_env = gym.wrappers.RecordVideo(self.test_env, video_folder=self.test_folder, name_prefix=f"epoch_{current_episode}", episode_trigger=lambda x: x % 10 == 9)
 
         scores = []
         for _ in range(epochs):
-            state, _ = self.test_env.reset(seed=self.seed)
+            state, _ = self.test_env.reset()
             done = False
             score = 0
 
