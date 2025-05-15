@@ -52,7 +52,7 @@ class PPOAgent:
         seed (int): random seed
     """
 
-    def __init__(self, env: gym.Env, get_test_env: Callable[[], gym.Env], args):
+    def __init__(self, env: gym.Env, get_test_env: Callable[[gym.Env], gym.Env], args):
         """Initialize."""
         self.env_name = env.unwrapped.spec.id
         self.env = env
@@ -78,12 +78,15 @@ class PPOAgent:
         obs_dim = env.observation_space.shape[0]
         action_dim = env.action_space.shape[0]
         self.obs_dim = obs_dim
-        self.actor = Actor(obs_dim, action_dim, action_scale=env.action_space.high).to(self.device)
-        self.critic = Critic(obs_dim).to(self.device)
+        self.actor = Actor(obs_dim, action_dim, activation=args.activation, hidden_dim=args.hidden_dim).to(self.device)
+        self.critic = Critic(obs_dim, activation=args.activation, hidden_dim=args.hidden_dim).to(self.device)
 
         # optimizer
-        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=args.actor_lr)
-        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=args.critic_lr)
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=args.actor_lr, eps=1e-5)
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=args.critic_lr, eps=1e-5)
+
+        self.actor_scheduler = optim.lr_scheduler.CosineAnnealingLR(self.actor_optimizer, T_max=self.num_episodes)
+        self.critic_scheduler = optim.lr_scheduler.CosineAnnealingLR(self.critic_optimizer, T_max=self.num_episodes)
 
         # memory for training
         self.states: List[torch.Tensor] = []
@@ -98,23 +101,36 @@ class PPOAgent:
 
         # mode: train / test
         self.is_test = False
+        self.gradient_clip = args.gradient_clip
+        self.gradient_clip_value = args.gradient_clip_value
         self.score_baseline = args.score_baseline
         self.checkpoint_dir = args.checkpoint_dir
         
         os.makedirs(self.checkpoint_dir, exist_ok=True)
+
+    @torch.no_grad()
+    def get_dist(self, state: np.ndarray) -> torch.distributions.Normal:
+        state = torch.FloatTensor(state).reshape(1, -1).to(self.device)
+        dist = self.actor(state)
+        return dist
+    
+    @torch.no_grad()
+    def get_value(self, state: np.ndarray) -> float:
+        state = torch.FloatTensor(state).reshape(1, -1).to(self.device)
+        value = self.critic(state).detach().cpu().numpy()
+        return value
         
     def select_action(self, state: np.ndarray) -> np.ndarray:
         """Select an action from the input state."""
-        state = torch.FloatTensor(state).to(self.device)
-        action, dist = self.actor(state)
-        selected_action = dist.mean if self.is_test else action
+        dist = self.get_dist(state)
+        selected_action = dist.mean if self.is_test else dist.sample()
 
         if not self.is_test:
-            value = self.critic(state)
+            value = self.get_value(state)
             self.states.append(state)
-            self.actions.append(selected_action)
+            self.actions.append(selected_action.cpu().numpy())
             self.values.append(value)
-            self.log_probs.append(dist.log_prob(selected_action))
+            self.log_probs.append(dist.log_prob(selected_action).cpu().numpy())
 
         return selected_action.cpu().ravel().detach().numpy()
 
@@ -130,17 +146,17 @@ class PPOAgent:
         done = np.reshape(done, (1, -1))
 
         if not self.is_test:
-            self.rewards.append(torch.FloatTensor(reward).to(self.device))
-            self.masks.append(torch.FloatTensor(1 - done).to(self.device))
+            self.rewards.append(reward)
+            self.masks.append(1 - done)
 
         return next_state, reward, done
 
     def update_model(self, next_state: np.ndarray) -> Tuple[float, float]:
         """Update the model by gradient descent."""
         next_state = torch.FloatTensor(next_state).to(self.device)
-        next_value = self.critic(next_state)
+        next_value = self.critic(next_state).detach().cpu().numpy()
 
-        returns = compute_gae(
+        advantages = compute_gae(
             next_value,
             self.rewards,
             self.masks,
@@ -149,12 +165,16 @@ class PPOAgent:
             self.tau,
         )
 
-        states = torch.cat(self.states).view(-1, self.obs_dim)
-        actions = torch.cat(self.actions)
-        returns = torch.cat(returns).detach()
-        values = torch.cat(self.values).detach()
-        log_probs = torch.cat(self.log_probs).detach()
-        advantages = returns - values
+        states = torch.from_numpy(np.concatenate(self.states)).view(-1, self.obs_dim).float().to(self.device)
+        actions = torch.from_numpy(np.vstack(self.actions)).to(self.device)
+        advantages = torch.from_numpy(np.concatenate(advantages)).to(self.device).float()
+        values = torch.from_numpy(np.concatenate(self.values)).to(self.device).float()
+        log_probs = torch.from_numpy(np.vstack(self.log_probs)).to(self.device)
+
+        returns = values + advantages
+
+        advantages = advantages - advantages.mean()
+        advantages = advantages / advantages.std()
 
         actor_losses, critic_losses = [], []
 
@@ -169,7 +189,7 @@ class PPOAgent:
             advantages=advantages,
         ):
             # calculate ratios
-            _, dist = self.actor(state)
+            dist = self.actor(state)
             log_prob = dist.log_prob(action)
             ratio = (log_prob - old_log_prob).exp()
 
@@ -192,11 +212,15 @@ class PPOAgent:
             # train critic
             self.critic_optimizer.zero_grad()
             critic_loss.backward(retain_graph=True)
+            if self.gradient_clip:
+                nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=self.gradient_clip_value)
             self.critic_optimizer.step()
 
             # train actor
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
+            if self.gradient_clip:
+                nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=self.gradient_clip_value)
             self.actor_optimizer.step()
 
             actor_losses.append(actor_loss.item())
@@ -207,6 +231,9 @@ class PPOAgent:
 
         actor_loss = sum(actor_losses) / len(actor_losses)
         critic_loss = sum(critic_losses) / len(critic_losses)
+
+        self.actor_scheduler.step()
+        self.critic_scheduler.step()
 
         return actor_loss, critic_loss
 
@@ -241,11 +268,15 @@ class PPOAgent:
                     })
                     
                     episode_count += 1
-                    state, _ = self.env.reset(seed=self.seed)
+                    state, _ = self.env.reset()
                     state = np.expand_dims(state, axis=0)
                     scores.append(score)
                     score = 0
-
+                    
+                if self.total_step % 500_000 == 0:
+                    fname = f"{self.total_step // 1_000_000}p5m" if self.total_step % 1_000_000 != 0 else f"{self.total_step // 1_000_000}m"
+                    torch.save(self.actor.state_dict(), f"{self.checkpoint_dir}/ppo_{self.env_name}_model_step_{fname}.pth")
+                    
             actor_loss, critic_loss = self.update_model(next_state)
             
             wandb.log({
@@ -276,8 +307,8 @@ class PPOAgent:
     def test(self, epochs: int = 10, current_episode: int = 0):
         """Test the agent."""
         self.is_test = True
-        self.test_env = self.get_test_env()
-        self.test_env = gym.wrappers.RecordVideo(self.test_env, video_folder=self.test_folder, name_prefix=f"epoch_{current_episode}", episode_trigger=lambda x: x % 10 == 9)
+        self.test_env = self.get_test_env(self.env)
+        self.test_env = gym.wrappers.RecordVideo(self.test_env, video_folder=self.test_folder, name_prefix=f"epoch_{current_episode}", episode_trigger=lambda x: x == 0)
 
         scores = []
         for _ in range(epochs):
