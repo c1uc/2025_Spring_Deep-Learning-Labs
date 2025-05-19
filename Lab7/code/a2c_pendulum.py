@@ -6,6 +6,8 @@
 # Contributors: Wei Hung and Alison Wen
 # Instructor: Ping-Chun Hsieh
 
+import os
+os.environ["XDG_RUNTIME_DIR"] = "~/.cache/xdgr"
 
 from datetime import datetime
 import random
@@ -20,8 +22,7 @@ import argparse
 import wandb
 from tqdm import tqdm
 from typing import Tuple, Callable, List
-from a2c import Actor, Critic
-import os
+from a2c import *
 
 class A2CAgent:
     """A2CAgent interacting with environment.
@@ -56,6 +57,8 @@ class A2CAgent:
         self.num_episodes = args.num_episodes
         self.test_interval = args.test_interval
         self.wandb_run_name = args.wandb_run_name
+        self.gae_lambda = args.gae_lambda
+        self.use_reward_as_target = args.use_reward_as_target
         
         # device: cpu / gpu
         self.device = torch.device(args.device)
@@ -64,15 +67,23 @@ class A2CAgent:
         # networks
         obs_dim = env.observation_space.shape[0]
         action_dim = env.action_space.shape[0]
-        self.actor = Actor(obs_dim, action_dim, action_scale=2.0, log_std_min=-20, log_std_max=0).to(self.device)
-        self.critic = Critic(obs_dim).to(self.device)
+        self.obs_dim = obs_dim
+        self.action_dim = action_dim
+        self.actor = Actor(obs_dim, action_dim, args.activation, args.hidden_dim, args.log_std_min, args.log_std_max).to(self.device)
+        self.critic = Critic(obs_dim, args.activation, args.hidden_dim).to(self.device)
 
         # optimizer
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=self.actor_lr)
         self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=self.critic_lr)
+        
+        self.actor_scheduler = optim.lr_scheduler.CosineAnnealingLR(self.actor_optimizer, T_max=self.num_episodes)
+        self.critic_scheduler = optim.lr_scheduler.CosineAnnealingLR(self.critic_optimizer, T_max=self.num_episodes)
+
+        self.clip_grad = args.clip_grad
+        self.clip_grad_value = args.clip_grad_value
 
         # transitions storage
-        self.transitions: List[dict] = []
+        self.transitions: List = []
 
         # total steps count
         self.total_step = 0
@@ -81,35 +92,43 @@ class A2CAgent:
         self.is_test = False
         self.checkpoint_dir = args.checkpoint_dir
         os.makedirs(self.checkpoint_dir, exist_ok=True)
+        
+    @torch.no_grad()
+    def get_value(self, state: np.ndarray) -> float:
+        """Get the value of the state."""
+        state = torch.FloatTensor(state).to(self.device)
+        state = state.reshape(-1, self.obs_dim)
+        return self.critic(state).item()
+    
+    @torch.no_grad()
+    def get_dist(self, state: np.ndarray) -> torch.distributions.Normal:
+        """Get the distribution of the state."""
+        state = torch.FloatTensor(state).to(self.device)
+        state = state.reshape(-1, self.obs_dim)
+        dist = self.actor(state)
+        return dist
 
     def select_action(self, state: np.ndarray) -> np.ndarray:
         """Select an action from the input state."""
-        state = torch.FloatTensor(state).to(self.device)
-        action, dist = self.actor(state)
-        selected_action = dist.mean if self.is_test else action
-
+        dist = self.get_dist(state)
+        selected_action = dist.mean if self.is_test else dist.sample()
+        selected_action = selected_action.cpu().numpy()
+        
         if not self.is_test:
-            self.transitions.append({
-                'state': state,
-                'action': selected_action,
-            })
+            self.transitions.extend([state, selected_action])
 
-        return selected_action.clamp(-2.0, 2.0).cpu().detach().numpy()
+        return selected_action
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, np.float64, bool]:
         """Take an action and return the response of the env."""
         if not self.is_test:
-            next_state, reward, terminated, truncated, _ = self.env.step(action)
+            next_state, reward, terminated, truncated, _ = self.env.step(action[0])
         else:
-            next_state, reward, terminated, truncated, _ = self.test_env.step(action)
+            next_state, reward, terminated, truncated, _ = self.test_env.step(action[0])
         done = terminated or truncated
 
         if not self.is_test:
-            self.transitions[-1].update({
-                'next_state': next_state,
-                'reward': reward,
-                'done': done
-            })
+            self.transitions.extend([reward, done, next_state])
 
         return next_state, reward, done
 
@@ -118,48 +137,49 @@ class A2CAgent:
         if not self.transitions:
             return torch.tensor(0.0), torch.tensor(0.0)
 
+        s, a, r, d, n_s = self.transitions
+
+        next_value = self.get_value(n_s)
+        
         # Extract data from transitions
-        states = torch.stack([t['state'] for t in self.transitions])
-        actions = torch.stack([t['action'] for t in self.transitions])
-        rewards = torch.tensor([t['reward'] for t in self.transitions], device=self.device).float().reshape(-1, 1)
-        dones = torch.tensor([t['done'] for t in self.transitions], device=self.device).reshape(-1, 1)
-        
-        # Compute next values
-        next_states = torch.FloatTensor(np.array([t['next_state'] for t in self.transitions])).to(self.device)
-        masks = ~dones
-        
-        with torch.no_grad():
-            next_values = self.critic(next_states)
+        states = torch.FloatTensor(s).to(self.device).reshape(-1, self.obs_dim)
+        actions = torch.FloatTensor(a).to(self.device).reshape(-1, self.action_dim)
         
         values = self.critic(states)
-        
-        # Compute GAE
-        returns = rewards + self.gamma * next_values * masks
-        
+        if self.use_reward_as_target:
+            value_target = torch.tensor(r).float().to(self.device).reshape(-1, 1)
+        else:
+            value_target = torch.tensor(r + self.gamma * next_value * (1 - d)).float().to(self.device).reshape(-1, 1)
         # Compute value loss
-        value_loss = F.mse_loss(values, returns.reshape(-1, 1))
+        value_loss = F.mse_loss(values, value_target)
 
         # Update value
         self.critic_optimizer.zero_grad()
         value_loss.backward()
-        # torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1.0)
+        if self.clip_grad:
+            torch.nn.utils.clip_grad_norm_(self.critic.parameters(), self.clip_grad_value)
         self.critic_optimizer.step()
 
         # Compute policy loss
-        _, dist = self.actor(states)
+        dist = self.actor(states)
         log_probs = dist.log_prob(actions)
-        advantages = returns - values.detach()
         
-        policy_loss = -(log_probs * advantages.detach()).mean() - self.entropy_weight * dist.entropy().mean()
+        advantage = value_target - values
+        
+        policy_loss = -(log_probs * advantage.detach()).mean() - self.entropy_weight * dist.entropy().mean()
 
         # Update policy
         self.actor_optimizer.zero_grad()
         policy_loss.backward()
-        # torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 1.0)
+        if self.clip_grad:
+            torch.nn.utils.clip_grad_norm_(self.actor.parameters(), self.clip_grad_value)
         self.actor_optimizer.step()
 
         # Clear transitions
         self.transitions = []
+        
+        self.actor_scheduler.step()
+        self.critic_scheduler.step()
 
         return policy_loss.item(), value_loss.item()
 
@@ -257,14 +277,37 @@ if __name__ == "__main__":
     parser.add_argument("--wandb-run-name", type=str, default=f"pendulum-a2c-run-{datetime.now().strftime('%Y%m%d-%H%M%S')}")
     parser.add_argument("--actor-lr", type=float, default=3e-4)
     parser.add_argument("--critic-lr", type=float, default=1e-3)
+    parser.add_argument("--log-std-min", type=float, default=-20)
+    parser.add_argument("--log-std-max", type=float, default=0)
     parser.add_argument("--discount-factor", type=float, default=0.9)
+    parser.add_argument("--gae-lambda", type=float, default=0.95)
     parser.add_argument("--num-episodes", type=float, default=1000)
-    parser.add_argument("--seed", type=int, default=23)
-    parser.add_argument("--entropy-weight", type=int, default=1e-2)
+    parser.add_argument("--seed", type=int, default=88)
+    parser.add_argument("--entropy-weight", type=int, default=0)
     parser.add_argument("--test-interval", type=int, default=10)
-    parser.add_argument("--test-folder", type=str, default="a2c-pendulum/videos")
-    parser.add_argument("--checkpoint-dir", type=str, default="a2c-pendulum/checkpoints")
+    parser.add_argument("--hidden-dim", type=int, default=128)
+    parser.add_argument("--activation", type=str, default="mish")
+    parser.add_argument("--clip-grad", type=bool, default=False)
+    parser.add_argument("--clip-grad-value", type=float, default=0.5)
+    parser.add_argument("--use-reward-as-target", type=bool, default=False)
     args = parser.parse_args()
+    
+    i = 1
+    while os.path.exists(f"a2c-pendulum{i}"):
+        i += 1
+    args.checkpoint_dir = f"a2c-pendulum{i}/checkpoints"
+    args.test_folder = f"a2c-pendulum{i}/videos"
+    os.makedirs(args.checkpoint_dir, exist_ok=True)
+    os.makedirs(args.test_folder, exist_ok=True)
+    
+    if args.activation == "tanh":
+        args.activation = nn.Tanh
+    elif args.activation == "relu":
+        args.activation = nn.ReLU
+    elif args.activation == "mish":
+        args.activation = nn.Mish
+    else:
+        raise ValueError(f"Activation function {args.activation} not supported")
     
     # environment
     env = gym.make("Pendulum-v1", render_mode="rgb_array")
@@ -273,7 +316,7 @@ if __name__ == "__main__":
     random.seed(seed)
     np.random.seed(seed)
     seed_torch(seed)
-    wandb.init(project="DLP-Lab7-A2C-Pendulum", name=args.wandb_run_name, save_code=True)
+    wandb.init(project="DLP-Lab7-A2C-Pendulum", name=args.wandb_run_name, save_code=True, config=vars(args))
     
     agent = A2CAgent(env, get_test_env, args)
     agent.train()
