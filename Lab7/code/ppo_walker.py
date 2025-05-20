@@ -35,7 +35,7 @@ class FixedNormalizeObservation(gym.Wrapper):
         
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--device", type=str, default="cuda:1" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--device", type=str, default="cuda:0" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--wandb-run-name", type=str, default=f"walker-ppo-run-{datetime.now().strftime('%Y%m%d-%H%M%S')}")
     parser.add_argument("--actor-lr", type=float, default=3e-4)
     parser.add_argument("--critic-lr", type=float, default=3e-4)

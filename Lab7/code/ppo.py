@@ -10,6 +10,7 @@ from typing import List, Tuple, Callable
 from tqdm import tqdm
 import wandb
 import os
+import pickle
 
 # PPO updates the model several times(update_epoch) using the stacked memory. 
 # By ppo_iter function, it can yield the samples of stacked memory by interacting a environment.
@@ -276,6 +277,9 @@ class PPOAgent:
                 if self.total_step % 500_000 == 0:
                     fname = f"{self.total_step // 1_000_000}p5m" if self.total_step % 1_000_000 != 0 else f"{self.total_step // 1_000_000}m"
                     torch.save(self.actor.state_dict(), f"{self.checkpoint_dir}/ppo_{self.env_name}_model_step_{fname}.pth")
+                    if hasattr(self.env, 'obs_rms'):
+                        with open(f"{self.checkpoint_dir}/ppo_{self.env_name}_obs_rms_step_{fname}.pkl", "wb") as f:
+                            pickle.dump(self.env.obs_rms, f)
                     
             actor_loss, critic_loss = self.update_model(next_state)
             
@@ -298,6 +302,9 @@ class PPOAgent:
                 
                 if avg_score > self.score_baseline:
                     torch.save(self.actor.state_dict(), f"{self.checkpoint_dir}/ppo_{self.env_name}_model_ep_{ep}_step_{self.total_step}_score_{int(avg_score)}.pth")
+                    if hasattr(self.env, 'obs_rms'):
+                        with open(f"{self.checkpoint_dir}/ppo_{self.env_name}_obs_rms_ep_{ep}_step_{self.total_step}_score_{int(avg_score)}.pkl", "wb") as f:
+                            pickle.dump(self.env.obs_rms, f)
                 
                 self.is_test = False
 
