@@ -11,15 +11,15 @@ def compute_gae(
 
     values = values + [next_value]
     gae = 0
-    gae_returns = []
+    advantages = []
     
     for step in reversed(range(len(rewards))):
         delta = rewards[step] + gamma * values[step + 1] * masks[step] - values[step]
         gae = delta + gamma * tau * masks[step] * gae
-        gae_returns.insert(0, gae)
+        advantages.insert(0, gae)
     
     #############################
-    return gae_returns
+    return advantages
 
 
 def initialize_uniformly(layer, init_w: float = 3e-3):

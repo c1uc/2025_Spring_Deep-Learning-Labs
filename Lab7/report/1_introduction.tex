@@ -1,0 +1,14 @@
+In this lab, we implement a A2C agent and a PPO agent to solve on Pendulum and Walker2d environments.
+
+\subsection{A2C}
+A2C is a policy-based reinforcement learning algorithm. It uses a policy network to select actions and a value network to estimate the value of the current state.
+It uses the advantage function to update the policy network, so it is named as Advantage Actor-Critic.
+Although it is better than the original actor-critic algorithm, it is still not the best policy-based reinforcement learning algorithm.
+
+It requires a lot of samples to train the model, so it is not efficient; and also it is not stable, it needs explicit exploration to enforce the policy to explore the environment.
+
+\subsection{PPO}
+PPO is a policy-based reinforcement learning algorithm. It uses a policy network to select actions and a value network to estimate the value of the current state.
+It uses the clipped surrogate objective function to update the policy network, so it is named as Proximal Policy Optimization.
+
+Unlike A2C, PPO is more stable and efficient, and exploration can be done implicitly, so it is more popular in the research community.

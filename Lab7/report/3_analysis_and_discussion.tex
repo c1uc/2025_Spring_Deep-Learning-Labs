@@ -1,0 +1,63 @@
+\subsection{Training Curves}
+The training curves can be shown by the testing return curves, since the training process contains more noise.
+
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.8\linewidth]{src/a2c_pendulum_test.png}
+    \caption{Testing return curve for A2C on Pendulum environment}
+    \label{fig:a2c_pendulum_test}
+\end{figure}
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.8\linewidth]{src/ppo_pendulum_test.png}
+    \caption{Testing return curve for PPO on Pendulum environment}
+    \label{fig:ppo_pendulum_test}
+\end{figure}
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.8\linewidth]{src/ppo_walker_test.png}
+    \caption{Testing return curve for PPO on Walker environment}
+    \label{fig:ppo_walker_test}
+\end{figure}
+
+\subsection{Sample Efficiency}
+Sample efficiency is the number of samples required to train the model to a certain level of performance.
+Since A2C and PPO are both on-policy algorithms, so the sample efficiency is a critical factor to consider.
+From the testing return curves, we can see that PPO is much more sample efficient than A2C.
+
+\subsection{Training Stability}
+Training stability is the stability of the training process.
+From the testing return curves, we can see that PPO is more stable than A2C, thanks to its clipped surrogate objective function.
+
+\subsection{Key Parameters}
+\subsubsection{Entropy Weight}
+The entropy weight is a key parameter to consider for A2C, since it dont have a self-clipped surrogate objective function.
+
+From lots of experiments, we find that the entropy weight for A2C should be a small value, like 0.01, but can't be set to 0, otherwise the training will not converge.
+
+As for PPO, the entropy weight to train on pendulum environment is also set to 0.01, since the agent need to explore more in the beginning of training to reach the optimal policy.
+But for Walker environment, the agent need to explore less, since the environment is much more complex and might need more exploitation. Thus the entropy weight is set to 0.
+
+\subsubsection{Clipping Parameter}
+The clipping parameter is a key parameter to consider for PPO, since it has a self-clipped surrogate objective function.
+We've found that the clipping parameter equal to 0.2 is really good for both environments, it can strike a good balance between exploration needed in pendulum environment and exploitation needed in walker environment.
+
+\subsubsection{Action Distribution}
+To achieve a good performance for A2C, I've tried two ways to get the action distribution.
+
+Firstly, I've tried to use a normal distribution whose mean and variance are both depends on the state.
+\begin{equation}
+    \pi(a|s) = \mathcal{N}(\mu(s), \sigma^2(s) \cdot I)
+\end{equation}
+The performance of this policy on PPO is already really good, but it seems like the agent can't learn anything, this setting might be too complex for A2C to handle.
+
+Then I've tried to use a normal distribution whose mean is depends on the state and variance is based on the action dimension, which can be shown in the following equation.
+\begin{equation}
+    \pi(a|s) = \mathcal{N}(\mu(s), \left[\sigma_0^2, \sigma_1^2, \cdots, \sigma_{a_{dim}-1}^2\right])
+\end{equation}
+where $a_{dim}$ is the dimension of the action space, and $\sigma_i$ are learnable parameters.
+
+This setting can achieve a good performance for A2C since it is more simple and stable, and it also improves the performance of PPO after using this setting.

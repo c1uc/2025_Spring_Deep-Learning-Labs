@@ -1,0 +1,158 @@
+\subsection{Policy Gradient and TD Error for A2C}
+When calculating the policy gradient, we firstly calculate the advantage $A(s, a)$:
+\begin{equation}
+    A(s, a) = r + \gamma V(s') - V(s)
+\end{equation}
+where $r$ is the reward, $\gamma$ is the discount factor, $V(s)$ is the value function, and $V(s')$ is the value function of the next state.
+
+Then we use the following formula to update the policy network:
+\begin{equation}
+    \nabla_\theta J(\theta) = \mathbb{E}_{s \sim \rho^\theta}[ \nabla_\theta \log \pi_\theta(a|s) A(s, a)]
+\end{equation}
+
+To calculate the TD error, we use the following formula, which is just the same as the advantage function:
+\begin{equation}
+    \delta = r + \gamma V(s') - V(s)
+\end{equation}
+
+After that, we can write them into forms of loss functions:
+\begin{align}
+    L_A(\theta) &= \mathbb{E}_{s \sim \rho^\theta}[ \nabla_\theta \log \pi_\theta(a|s) A(s, a)] \\
+    L_C(\theta) &= \mathbb{E}_{s \sim \rho^\theta}[ \delta^2]
+\end{align}
+which is better for us to implement.
+
+For implementation, given the reward $r$, the value function $V(s)$, and the next state $s'$, we can calculate the advantage $A(s, a)$ and the TD error $\delta$ using the above formulas.
+
+\begin{lstlisting}[language=Python]
+s, a, r, d, n_s = self.transitions
+
+next_value = self.get_value(n_s)
+values = self.critic(states)
+
+value_target = torch.tensor(r + self.gamma * next_value * (1 - d)).float().to(self.device).reshape(-1, 1)
+value_loss = F.mse_loss(values, value_target)
+
+advantage = value_target - values
+policy_loss = -(log_probs * advantage.detach()).mean() - self.entropy_weight * dist.entropy().mean()
+
+actor_optimizer.zero_grad()
+policy_loss.backward()
+actor_optimizer.step()
+
+critic_optimizer.zero_grad()
+value_loss.backward()
+critic_optimizer.step()
+\end{lstlisting}
+
+\subsection{Clipped Surrogate Objective for PPO}
+To implement the clipped surrogate objective for PPO, we can use the following formula:
+\begin{equation}
+    L_C(\theta) = \mathbb{E}_{s \sim \rho^\theta}[ \min(r(\theta)A(s, a), \text{clip}(r(\theta), 1-\epsilon, 1+\epsilon)A(s, a))]
+\end{equation}
+where $r(\theta)$ is the ratio of the new policy to the old policy, $\epsilon$ is the clipping parameter.
+
+And its implementation is really straightforward, as shown in the following code:
+\begin{lstlisting}[language=Python]
+dist = self.actor(state)
+log_prob = dist.log_prob(action)
+ratio = (log_prob - old_log_prob).exp()
+
+actor_loss = -torch.min(ratio * adv, torch.clamp(ratio, 1 - self.epsilon, 1 + self.epsilon) * adv).mean()
+\end{lstlisting}
+
+
+\subsection{Generalized Advantage Estimation for PPO}
+For GAEs, we can use the following formula:
+\begin{equation}
+    A(s, a) = \sum_{t=0}^{T-1} \gamma^t (\prod_{i=1}^{t} \gamma \lambda) \delta_{t+1}
+\end{equation}
+where $\gamma$ is the discount factor, $\lambda$ is the GAE parameter.
+
+For simpler implementation, we can calaulate GAEs in a reverse order:
+\begin{equation}
+    A(s_{t-1}, a_{t-1}) = \delta_t + \gamma \lambda A(s_t, a_t)
+\end{equation}
+
+where $\delta_t = r_t + \gamma V(s_{t+1}) - V(s_t)$.
+
+And its implementation is shown in the following code:
+\begin{lstlisting}[language=Python]
+values = values + [next_value]
+gae = 0
+advantages = []
+
+for step in reversed(range(len(rewards))):
+    delta = rewards[step] + gamma * values[step + 1] * masks[step] - values[step]
+    gae = delta + gamma * tau * masks[step] * gae
+    advantages.insert(0, gae)
+\end{lstlisting}
+
+\subsection{Collect Samples for Training}
+To collect samples for training, we sample actions from the policy network and store them in the memory, so that we can explore the environment and update the policy network.
+
+And its implementation is shown in the following code:
+\begin{lstlisting}[language=Python]
+dist = self.get_dist(state)
+action = dist.mean if self.is_test else dist.sample()
+
+value = self.get_value(state)
+self.states.append(state)
+self.actions.append(action)
+self.values.append(value)
+self.log_probs.append(dist.log_prob(action))
+
+next_state, reward, terminated, truncated, _ = self.env.step(action)
+
+done = terminated or truncated
+
+self.rewards.append(reward)
+self.masks.append(1 - done)
+\end{lstlisting}
+
+\subsection{Enforce Exploration}
+To enforce exploration, we can use entropy to encourage the policy to explore the environment.
+
+And its implementation is shown in the following code:
+\begin{lstlisting}[language=Python]
+entropy_loss = -self.entropy_weight * dist.entropy().mean()
+\end{lstlisting}
+when the entropy of action distribution is high, the policy will explore the environment more, and the loss will be lower.
+
+And for A2C, we further clip the log standard deviation of the action distribution into a range to ensure it explores the environment more, but also not too much.
+
+And its implementation is shown in the following code:
+\begin{lstlisting}[language=Python]
+log_std = torch.clamp(log_std, min=self.log_std_min, max=self.log_std_max)
+std = torch.exp(log_std)
+dist = Normal(mean, std)
+\end{lstlisting}
+
+
+\subsection{Weights and Biases}
+To record the training process, we log the training loss, training reward, and testing reward using Weights and Biases.
+And also for reproducibility, we also log the code, the random seed, and the hyperparameters on W\&B.
+
+The implementation is really simple, as shown in the following code:
+\begin{lstlisting}[language=Python]
+wandb.init(project="DLP-Lab7-PPO-Walker", name=args.wandb_run_name, save_code=True, config=vars(args))
+
+wandb.log({
+    "train/step": self.total_step,
+    "train/episode": episode_count,
+    "train/return": score
+})
+
+wandb.log({
+    "update/step": self.total_step,
+    "update/actor_loss": actor_loss,
+    "update/critic_loss": critic_loss
+})
+
+wandb.log({
+    "test/avg_score": avg_score,
+    "test/step": self.total_step
+})
+\end{lstlisting}
+
+
